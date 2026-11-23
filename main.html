@@ -523,6 +523,10 @@
             color: inherit;
         }
 
+        /* 投稿画面：入力カードを募集一覧と同じく横幅いっぱいにし、学校行事の欄は出さない */
+        [data-page="main"] #recruit-form-area .sidebar-form { max-width: none; }
+        body.is-recruit-tab #school-events-strip { display: none !important; }
+
         /* ホームの「これから1か月の学校行事」 */
         .se-strip { margin: 0 0 28px; padding: 18px 20px; border: 1px solid var(--ui-line, #e2e8f0); border-radius: 18px; background: var(--ui-paper, #fff); }
         .se-strip-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -1875,6 +1879,8 @@
             const searchArea = document.getElementById("search-area");
             if (recruitArea) recruitArea.style.display = isRecruit ? "block" : "none";
             if (searchArea) searchArea.style.display = isRecruit ? "none" : "block";
+            // 投稿画面では学校行事の欄を出さない（入力カードと幅がそろわず、投稿の邪魔になるため）
+            document.body.classList.toggle("is-recruit-tab", isRecruit);
             // ヘッダーの「募集投稿」「ユーザーを探す」は両方とも出したまま、今いる方だけを選択中にする
             [["nav-recruit-link", isRecruit], ["nav-search-link", !isRecruit]].forEach(([id, active]) => {
                 const link = document.getElementById(id);
