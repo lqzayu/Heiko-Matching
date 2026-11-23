@@ -101,7 +101,7 @@ function doPost(e) {
     const mode = data.mode;
 
     const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword"];
-    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent"];
+    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource"];
     if (!publicModes.includes(mode) && !adminModes.includes(mode)) {
       const actorId = getRequestActorId(mode, data);
       const adminProfileRequest = mode === "getUserProfile" && isAdminRequest(data);
@@ -367,7 +367,67 @@ function doPost(e) {
       return createRes("error", "評価対象が見つかりません");
     }
 
+    // ===== JM計算の資格（ユーザーごとにサーバーへ保存） =====
+    if (mode === "getJmEntries") {
+      const userId = cleanCell(data.userId);
+      const sheet = ss.getSheetByName("JM計算");
+      if (!sheet || sheet.getLastRow() <= 1) return createRes("success", { entries: null });
+      const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+      const row = rows.find(r => cleanCell(r[0]) === userId);
+      if (!row) return createRes("success", { entries: null });
+      let entries = [];
+      try { entries = sanitizeJmEntries(JSON.parse(String(row[1] || "[]"))) || []; } catch (e) { entries = []; }
+      return createRes("success", { entries: entries, updatedAt: row[2] instanceof Date ? row[2].getTime() : 0 });
+    }
+
+    if (mode === "saveJmEntries") {
+      const userId = cleanCell(data.userId);
+      const entries = sanitizeJmEntries(data.entries);
+      if (!entries) return createRes("error", "資格のデータが正しくありません");
+      const json = JSON.stringify(entries);
+      if (json.length > 40000) return createRes("error", "登録できる資格の数を超えています");
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(10000)) return createRes("error", "混み合っています。少し待ってからお試しください");
+      try {
+        const sheet = getOrCreateSheet(ss, "JM計算", ["UserID", "資格データ", "更新日時"]);
+        const now = new Date();
+        const last = sheet.getLastRow();
+        const ids = last > 1 ? sheet.getRange(2, 1, last - 1, 1).getValues() : [];
+        const index = ids.findIndex(r => cleanCell(r[0]) === userId);
+        if (index >= 0) sheet.getRange(index + 2, 2, 1, 2).setValues([[json, now]]);
+        else sheet.getRange(last + 1, 1, 1, 3).setValues([[safeSheetText(userId, 64), json, now]]);
+        return createRes("success", { saved: entries.length, updatedAt: now.getTime() });
+      } finally {
+        lock.releaseLock();
+      }
+    }
+
     // ===== 学校行事 =====
+    if (mode === "adminSyncSchoolCalendar") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const result = syncSchoolEventsFromCalendar();
+      if (result.error) return createRes("error", result.error);
+      return createRes("success", result);
+    }
+
+    if (mode === "adminSchoolCalendarStatus") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      return createRes("success", getSchoolCalendarStatus());
+    }
+
+    if (mode === "adminDeleteSchoolEventsBySource") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const source = cleanCell(data.source) === SCHOOL_CALENDAR_SOURCE ? SCHOOL_CALENDAR_SOURCE : ADMIN_USER_ID;
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(10000)) return createRes("error", "混み合っています。少し待ってからお試しください");
+      try {
+        const removed = rewriteSchoolEventRows(row => cleanCell(row[7]) !== source, []);
+        return createRes("success", { removed: removed });
+      } finally {
+        lock.releaseLock();
+      }
+    }
+
     if (mode === "getSchoolEvents") {
       const from = normalizeSchoolEventDate(data.from);
       const to = normalizeSchoolEventDate(data.to);
@@ -414,6 +474,8 @@ function doPost(e) {
           const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, SCHOOL_EVENT_HEADERS.length).getValues();
           for (let i = rows.length - 1; i >= 0; i--) {
             const date = normalizeSchoolEventDate(rows[i][1]);
+            // Googleカレンダーから取り込んだ行事は、自動取り込みで管理するので置き換えの対象にしない
+            if (cleanCell(rows[i][7]) === SCHOOL_CALENDAR_SOURCE) continue;
             if (date && date >= replaceFrom && date <= replaceTo) {
               sheet.deleteRow(i + 2);
               removed++;
@@ -1917,6 +1979,176 @@ const SCHOOL_EVENT_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "
 const SCHOOL_EVENT_FILE_MAX_BYTES = 15 * 1024 * 1024;
 const SCHOOL_EVENT_CACHE_KEY = "school-events-v1";
 
+const SCHOOL_CALENDAR_SOURCE = "calendar";
+const SCHOOL_CALENDAR_DEFAULT_ID = "fcs.ed.jp_ngcir7nepv11vlov40421qi0ck@group.calendar.google.com";
+const JM_MANUAL_POINTS = [30, 20, 12, 7, 4, 2, 1];
+
+// JM計算の資格データを検証する（形が正しくなければ null）
+function sanitizeJmEntries(raw) {
+  if (!Array.isArray(raw) || raw.length > 300) return null;
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const e = raw[i];
+    if (!e || typeof e !== "object") return null;
+    if (e.manual) {
+      const name = cleanCell(e.name).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, 60);
+      const pts = Number(e.pts);
+      if (!name || JM_MANUAL_POINTS.indexOf(pts) < 0) return null;
+      out.push({ manual: true, name: name, pts: pts });
+    } else {
+      const key = cleanCell(e.key).slice(0, 150);
+      const grade = Number(e.grade);
+      if (!key || !Number.isInteger(grade) || grade < 0 || grade > 20) return null;
+      out.push({ key: key, grade: grade });
+    }
+  }
+  return out;
+}
+
+// ===== Googleカレンダー（学校HPカレンダー）からの自動取り込み =====
+function getSchoolCalendarId() {
+  return cleanCell(PropertiesService.getScriptProperties().getProperty("SCHOOL_CALENDAR_ID")) || SCHOOL_CALENDAR_DEFAULT_ID;
+}
+
+function getSchoolCalendarStatus() {
+  const props = PropertiesService.getScriptProperties();
+  let last = null;
+  try { last = JSON.parse(props.getProperty("SCHOOL_CALENDAR_LAST_SYNC") || "null"); } catch (e) { last = null; }
+  // トリガーを見る権限（script.scriptapp）がなくても、取り込み状況だけは返せるようにする
+  let hasTrigger = false;
+  try { hasTrigger = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === "syncSchoolEventsFromCalendar"); } catch (e) { hasTrigger = false; }
+  return { calendarId: getSchoolCalendarId(), last: last, autoSync: hasTrigger };
+}
+
+// Apps Script のエディタで一度だけ実行すると、6時間ごとの自動取り込みが始まる
+function setupSchoolCalendarSync() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === "syncSchoolEventsFromCalendar")
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("syncSchoolEventsFromCalendar").timeBased().everyHours(6).create();
+  return syncSchoolEventsFromCalendar();
+}
+
+// 学校行事シートを、keep で残す行＋追加する行に書き直す。消した行数を返す
+function rewriteSchoolEventRows(keep, additions) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getSchoolEventSheet(ss);
+  const width = SCHOOL_EVENT_HEADERS.length;
+  const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues() : [];
+  const kept = rows.filter(keep).map(row => row.map((cell, i) => (i === 1 || i === 2) ? normalizeSchoolEventDate(cell) : cell));
+  const next = kept.concat(additions);
+  if (rows.length) sheet.getRange(2, 1, rows.length, width).clearContent();
+  if (next.length) sheet.getRange(2, 1, next.length, width).setValues(next);
+  CacheService.getScriptCache().remove(SCHOOL_EVENT_CACHE_KEY);
+  return rows.length - kept.length;
+}
+
+function syncSchoolEventsFromCalendar() {
+  const props = PropertiesService.getScriptProperties();
+  const record = result => {
+    try { props.setProperty("SCHOOL_CALENDAR_LAST_SYNC", JSON.stringify(Object.assign({ at: Date.now() }, result))); } catch (e) { /* 記録できなくても取り込みは続ける */ }
+    return result;
+  };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { error: "ほかの更新を処理中です。少し待ってからお試しください" };
+  try {
+    const url = "https://calendar.google.com/calendar/ical/" + encodeURIComponent(getSchoolCalendarId()) + "/public/basic.ics";
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+    if (response.getResponseCode() !== 200) return record({ error: "Googleカレンダーを取得できませんでした（HTTP " + response.getResponseCode() + "）。カレンダーが一般公開されているか確認してください" });
+    const startYear = inferSchoolYearStart();
+    const from = startYear + "-04-01";
+    const to = (startYear + 2) + "-03-31"; // 今年度と来年度
+    const events = parseSchoolCalendarIcs(response.getContentText()).filter(e => (e.endDate || e.date) >= from && e.date <= to);
+    const now = new Date();
+    const additions = events.map((e, i) => ["cal:" + e.uid + ":" + i, e.date, e.endDate, safeSheetText(e.title, 100), e.type, "", now, SCHOOL_CALENDAR_SOURCE]);
+    const removed = rewriteSchoolEventRows(row => cleanCell(row[7]) !== SCHOOL_CALENDAR_SOURCE, additions);
+    return record({ imported: additions.length, removed: removed, from: from, to: to });
+  } catch (error) {
+    return record({ error: "Googleカレンダーの取り込み中にエラーが発生しました" });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// iCal（.ics）の終日予定を学校行事の形に変換する
+function parseSchoolCalendarIcs(text) {
+  const unfolded = String(text).replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "");
+  const blocks = unfolded.split("BEGIN:VEVENT").slice(1);
+  const unescape = v => v.replace(/\\n/gi, " ").replace(/\\([,;\\])/g, "$1").trim();
+  const toDateKey = value => {
+    const m = String(value).match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/);
+    if (!m) return "";
+    if (m[4] && m[7]) {
+      const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+      return Utilities.formatDate(d, "Asia/Tokyo", "yyyy-MM-dd");
+    }
+    return m[1] + "-" + m[2] + "-" + m[3];
+  };
+  const addDays = (key, days) => {
+    const p = key.split("-").map(Number);
+    const d = new Date(p[0], p[1] - 1, p[2] + days);
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+  };
+  const out = [];
+  blocks.forEach(block => {
+    const body = block.split("END:VEVENT")[0];
+    const field = name => {
+      const m = body.match(new RegExp("(?:^|\\n)" + name + "(;[^:\\n]*)?:([^\\n]*)"));
+      return m ? { params: m[1] || "", value: m[2].replace(/\r$/, "") } : null;
+    };
+    const status = field("STATUS");
+    if (status && /CANCELLED/i.test(status.value)) return;
+    const start = field("DTSTART");
+    const summary = field("SUMMARY");
+    if (!start || !summary) return;
+    const date = toDateKey(start.value);
+    if (!date) return;
+    const end = field("DTEND");
+    let endDate = "";
+    if (end) {
+      const endKey = toDateKey(end.value);
+      // 終日予定の DTEND は「翌日」を指すので1日戻す
+      const last = /VALUE=DATE/.test(end.params) || /^\d{8}$/.test(end.value.trim()) ? addDays(endKey, -1) : endKey;
+      if (last > date) endDate = last;
+    }
+    const uid = (field("UID") || { value: "" }).value.replace(/[^A-Za-z0-9@._-]/g, "").slice(0, 80);
+    // 1つの予定に「、」区切りで複数の行事が書かれていることがあるので分ける
+    unescape(summary.value).split(/、/).map(t => t.trim()).filter(Boolean).forEach(rawTitle => {
+      // 半角カナ（ｲﾝﾀｰﾝｼｯﾌﾟ など）だけ全角に直す。括弧や数字の書き方はそのまま残す
+      const title = rawTitle.replace(/[《》]/g, "").replace(/[\uFF61-\uFF9F]+/g, kana => kana.normalize("NFKC")).slice(0, 100);
+      let itemEnd = endDate;
+      if (!itemEnd) itemEnd = inferEndDateFromTitle(date, rawTitle);
+      out.push({ uid: uid || "noid", date: date, endDate: itemEnd, title: title, type: classifySchoolEventTitle(rawTitle) });
+    });
+  });
+  out.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return out;
+}
+
+// 「(～20日)」「（～5/20）」「(K1～24日)」のような書き方から終了日を読む
+function inferEndDateFromTitle(date, title) {
+  const m = String(title).normalize("NFKC").match(/~\s*(?:(\d{1,2})\/)?(\d{1,2})日?\s*\)/);
+  if (!m) return "";
+  const p = date.split("-").map(Number);
+  let year = p[0], month = m[1] ? Number(m[1]) : p[1];
+  const day = Number(m[2]);
+  if (!m[1] && day < p[2]) month += 1;
+  if (m[1] && month < p[1]) year += 1;
+  const d = new Date(year, month - 1, day);
+  const key = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+  const span = (d.getTime() - new Date(p[0], p[1] - 1, p[2]).getTime()) / 86400000;
+  return key > date && span <= 60 ? key : "";
+}
+
+function classifySchoolEventTitle(title) {
+  const t = String(title);
+  if (/閉庁日/.test(t)) return "closed";
+  if (/《.*》|祝日|振替休日|国民の休日|元日|代休|生徒休業日|(記念|みどり|こども|海|山|敬老|秋分|春分|スポーツ|文化|勤労感謝|成人|天皇誕生|昭和|憲法記念)の日/.test(t)) return "holiday";
+  if (/考査/.test(t)) return "exam";
+  if (/検定|試験|講習|資格|テスト/.test(t)) return "license";
+  return "event";
+}
+
 function getSchoolEventSheet(ss) {
   const sheet = getOrCreateSheet(ss, "学校行事", SCHOOL_EVENT_HEADERS);
   // 日付が自動で日付型に変わらないよう、開始日・終了日の列は文字列として扱う
@@ -1939,7 +2171,8 @@ function readSchoolEvents(ss) {
     endDate: normalizeSchoolEventDate(row[2]),
     title: cleanCell(row[3]),
     type: SCHOOL_EVENT_TYPES.indexOf(cleanCell(row[4])) >= 0 ? cleanCell(row[4]) : "event",
-    note: cleanCell(row[5])
+    note: cleanCell(row[5]),
+    source: cleanCell(row[7]) === SCHOOL_CALENDAR_SOURCE ? SCHOOL_CALENDAR_SOURCE : "admin"
   })).filter(event => event.id && event.date && event.title);
   events.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
   try {
@@ -2192,6 +2425,8 @@ function getRequestActorId(mode, data) {
     getUnreadCount: "email",
     getNotificationSummary: "email",
     getSchoolEvents: "userId",
+    getJmEntries: "userId",
+    saveJmEntries: "userId",
     markAsRead: "myEmail",
     deleteAccount: "email"
   };

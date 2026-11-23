@@ -1389,6 +1389,8 @@
         .jm-rec-combo { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px dashed var(--ui-line); border-radius: 16px; color: var(--ui-ink); font-size: 13px; line-height: 1.6; }
         .jm-rec-combo strong { font-size: 12px; color: var(--ui-green); }
         .jm-beta-note { margin: 14px 0 0; padding: 10px 12px; border: 1px dashed currentColor; border-radius: 12px; font-size: 12px; line-height: 1.7; opacity: .92; }
+        .jm-sync-status { margin: -8px 0 12px; min-height: 1em; font-size: 12px; font-weight: 700; color: var(--ui-muted); }
+        .jm-sync-status.is-error { color: var(--ui-danger, #e11d48); }
         .jm-note { margin: 0; color: var(--ui-muted); font-size: 12px; line-height: 1.8; }
         .jm-note a { color: var(--ui-green); font-weight: 700; }
         @media screen and (max-width: 768px) {
@@ -1542,12 +1544,13 @@
                     <h2 style="font-size: 1.35rem; font-weight: 800; margin: 0; color: var(--ui-ink);">取得した資格</h2>
                     <button id="jm-clear" class="jm-clear" type="button">すべて消す</button>
                 </div>
+                <p class="jm-sync-status" id="jm-sync-status" aria-live="polite"></p>
                 <div class="user-grid" id="jm-list"></div>
             </section>
 
             <p class="jm-note">
                 点数は全国工業高等学校長協会の「令和8年度前期 区分表」をもとにしています。区分表は毎期見直されるため、申請前に必ず
-                <a href="https://zenkoukyo.or.jp/index_jm/" target="_blank" rel="noopener">全工協のジュニアマイスターのページ</a>で最新の区分表を確認し、担当の先生に相談してください。この計算結果は目安で、認定を保証するものではありません。入力した内容はこの端末のブラウザだけに保存されます。
+                <a href="https://zenkoukyo.or.jp/index_jm/" target="_blank" rel="noopener">全工協のジュニアマイスターのページ</a>で最新の区分表を確認し、担当の先生に相談してください。この計算結果は目安で、認定を保証するものではありません。登録した資格はサーバーに保存され、同じアカウントならほかの端末からも見られます。
             </p>
         </div>
     </main>
@@ -1855,14 +1858,87 @@
             $("profile-icon").src = profileImage && profileImage !== "null" ? profileImage : "avatar-default.svg";
         }
 
+        // ===== 登録した資格の保存 =====
+        // サーバー（GAS）に保存し、どの端末からでも同じ内容を見られるようにする。
+        // この端末のブラウザにも写しを置き、開いた直後の表示と通信できないときの控えに使う
+        const JM_GAS_URL = window.HEIKO_GAS_URL || "https://script.google.com/macros/s/AKfycbyQgkizdGw9MiZjxtlxAHpfMXw5ehLfj9HkzDcR9YLRo1Cm11kfEp4cWYqnNBdDR96w/exec";
+        const pendingKey = stateKey + ":pending"; // サーバーに送れていない変更があるときの印
+        let saveTimer = null;
+
+        function cleanEntries(list) {
+            return Array.isArray(list) ? list.filter(e => e && (e.manual ? typeof e.name === "string" && Number(e.pts) > 0 : ITEM_BY_KEY.has(e.key))) : [];
+        }
+
+        function setSyncStatus(text, isError = false) {
+            const el = $("jm-sync-status");
+            if (!el) return;
+            el.textContent = text;
+            el.classList.toggle("is-error", isError);
+        }
+
+        async function postJm(payload) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            try {
+                const res = await fetch(JM_GAS_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ ...payload, userId: currentUserId, sessionToken: localStorage.getItem("sessionToken") || "" }),
+                    signal: controller.signal
+                });
+                const result = await res.json();
+                if (!result || result.status !== "success") throw new Error((result && result.message) || "保存できませんでした");
+                return result.message;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
         function loadEntries() {
             try {
-                const saved = JSON.parse(localStorage.getItem(stateKey) || "[]");
-                entries = Array.isArray(saved) ? saved.filter(e => e && (e.manual ? typeof e.name === "string" && Number(e.pts) > 0 : ITEM_BY_KEY.has(e.key))) : [];
+                entries = cleanEntries(JSON.parse(localStorage.getItem(stateKey) || "[]"));
             } catch (error) { entries = []; }
         }
+
+        // サーバーの内容を読み込む。サーバーにまだ何もなければ、この端末の内容をサーバーへ移す
+        async function syncEntriesFromServer() {
+            setSyncStatus("サーバーと同期中...");
+            try {
+                const hasPending = localStorage.getItem(pendingKey) === "1";
+                const result = await postJm({ mode: "getJmEntries" });
+                if (result && Array.isArray(result.entries) && !hasPending) {
+                    entries = cleanEntries(result.entries);
+                    try { localStorage.setItem(stateKey, JSON.stringify(entries)); } catch (error) { /* 写しを置けなくても表示は続ける */ }
+                    render();
+                    setSyncStatus("サーバーに保存されています");
+                } else if (entries.length || hasPending) {
+                    await pushEntries();
+                } else {
+                    setSyncStatus("");
+                }
+            } catch (error) {
+                setSyncStatus("サーバーと同期できませんでした。この端末には保存されています", true);
+            }
+        }
+
+        async function pushEntries() {
+            try {
+                await postJm({ mode: "saveJmEntries", entries });
+                try { localStorage.removeItem(pendingKey); } catch (error) { /* 無視 */ }
+                setSyncStatus("サーバーに保存しました");
+            } catch (error) {
+                setSyncStatus("サーバーに保存できませんでした。この端末には保存されています（次に開いたときにもう一度送ります）", true);
+            }
+        }
+
         function saveEntries() {
-            try { localStorage.setItem(stateKey, JSON.stringify(entries)); } catch (error) { console.warn("保存できませんでした。", error); }
+            try {
+                localStorage.setItem(stateKey, JSON.stringify(entries));
+                localStorage.setItem(pendingKey, "1");
+            } catch (error) { console.warn("保存できませんでした。", error); }
+            // 続けて操作したときに何度も送らないよう、少し待ってからまとめて送る
+            clearTimeout(saveTimer);
+            setSyncStatus("保存中...");
+            saveTimer = setTimeout(pushEntries, 800);
         }
 
         function fillCategories() {
@@ -2263,6 +2339,7 @@
             fillItems();
             loadEntries();
             render();
+            syncEntriesFromServer();
         }
     </script>
 </body>

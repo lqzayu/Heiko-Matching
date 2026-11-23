@@ -630,6 +630,10 @@
         [data-page="admin"] .se-replace { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-right: auto; }
         [data-page="admin"] .se-registered { margin-top: 16px; }
         [data-page="admin"] .se-registered summary { cursor: pointer; font-weight: 700; font-size: 13.5px; padding: 8px 0; }
+        [data-page="admin"] .se-calendar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 14px 16px; border-radius: 14px; background: var(--ui-soft, #f1f5f9); flex-wrap: wrap; }
+        [data-page="admin"] .se-calendar-text { display: grid; gap: 2px; font-size: 13px; }
+        [data-page="admin"] .se-calendar-text span { color: var(--ui-muted, #64748b); font-size: 12.5px; }
+        [data-page="admin"] .se-registered-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
         [data-page="admin"] .se-row-warn td { background: rgba(245, 158, 11, .12); }
         [data-page="admin"] .se-warn-text { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 800; color: #b45309; white-space: nowrap; }
         [data-page="admin"] .se-type { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 800; white-space: nowrap; background: var(--ui-soft, #f1f5f9); }
@@ -779,6 +783,14 @@
                     <span class="panel-count" id="school-event-count">--</span>
                 </div>
 
+                <div class="se-calendar" aria-live="polite">
+                    <div class="se-calendar-text">
+                        <strong>Googleカレンダーから自動取り込み</strong>
+                        <span id="se-calendar-status">状態を確認中...</span>
+                    </div>
+                    <button class="se-sub-button" id="se-calendar-sync" type="button" onclick="syncSchoolCalendar()">今すぐ取り込む</button>
+                </div>
+
                 <div class="se-upload">
                     <label class="se-file" for="se-file-input">
                         <input id="se-file-input" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif">
@@ -821,9 +833,13 @@
                     <summary>登録済みの行事を見る</summary>
                     <div class="table-wrap">
                         <table class="table-school-events">
-                            <thead><tr><th>日付</th><th>行事名</th><th>種類</th><th class="col-action">操作</th></tr></thead>
-                            <tbody id="se-registered-body" data-skeleton="rows" data-count="3" data-columns="4"></tbody>
+                            <thead><tr><th>日付</th><th>行事名</th><th>種類</th><th>取得元</th><th class="col-action">操作</th></tr></thead>
+                            <tbody id="se-registered-body" data-skeleton="rows" data-count="3" data-columns="5"></tbody>
                         </table>
+                    </div>
+                    <div class="se-registered-actions">
+                        <button class="btn-action-delete" type="button" onclick="deleteAdminSchoolEvents()">管理者が登録した行事をすべて削除</button>
+                        <span class="panel-note">PDFや手入力で登録した行事だけを消します。Googleカレンダーから取り込んだ行事は残ります。</span>
                     </div>
                 </details>
             </section>
@@ -1564,10 +1580,68 @@
                         <td class="col-nowrap">${escapeHtml(event.date.replace(/-/g, "/"))}${event.endDate ? `<span class="cell-sub">〜${escapeHtml(event.endDate.replace(/-/g, "/"))}</span>` : ""}</td>
                         <td>${escapeHtml(event.title)}</td>
                         <td><span class="se-type">${escapeHtml(SCHOOL_EVENT_TYPE_LABELS[event.type] || "行事")}</span></td>
+                        <td class="col-nowrap">${event.source === "calendar" ? "カレンダー" : "管理者"}</td>
                         <td class="col-action"><button class="btn-action-delete" type="button" data-delete-event="${escapeHtml(event.id)}" data-title="${escapeHtml(event.title)}">削除</button></td>
-                    </tr>`).join("") : '<tr class="empty-row"><td colspan="4">まだ行事が登録されていません</td></tr>';
+                    </tr>`).join("") : '<tr class="empty-row"><td colspan="5">まだ行事が登録されていません</td></tr>';
             } catch (error) {
-                body.innerHTML = '<tr class="empty-row"><td colspan="4">読み込めませんでした</td></tr>';
+                body.innerHTML = '<tr class="empty-row"><td colspan="5">読み込めませんでした</td></tr>';
+            }
+        }
+
+        // ===== Googleカレンダーからの取り込み =====
+        function describeCalendarStatus(status) {
+            if (!status) return "状態を確認できませんでした";
+            const last = status.last;
+            const auto = status.autoSync ? "6時間ごとに自動で取り込み中" : "自動取り込みは未設定（Apps Script で setupSchoolCalendarSync を1回実行してください）";
+            if (!last) return `まだ取り込んでいません。${auto}`;
+            const at = new Date(last.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+            if (last.error) return `最後の取り込み（${at}）は失敗しました：${last.error}。${auto}`;
+            return `最後の取り込み：${at}（${last.imported}件）。${auto}`;
+        }
+
+        async function loadSchoolCalendarStatus() {
+            const el = document.getElementById("se-calendar-status");
+            try {
+                const result = await postGas({ mode: "adminSchoolCalendarStatus", adminId: ADMIN_ID, adminToken: adminToken });
+                el.textContent = result.status === "success" ? describeCalendarStatus(result.message) : (result.message || "状態を確認できませんでした");
+            } catch (error) {
+                el.textContent = "状態を確認できませんでした";
+            }
+        }
+
+        async function syncSchoolCalendar() {
+            const button = document.getElementById("se-calendar-sync");
+            button.disabled = true;
+            button.textContent = "取り込み中...";
+            try {
+                const result = await postGas({ mode: "adminSyncSchoolCalendar", adminId: ADMIN_ID, adminToken: adminToken }, 90000);
+                if (result.status !== "success" || !result.message || typeof result.message.imported !== "number") {
+                    alert(result.message && typeof result.message === "string" ? result.message : "取り込めませんでした。GASが新しいバージョンでデプロイされているか確認してください");
+                } else {
+                    setSchoolEventStatus(`Googleカレンダーから${result.message.imported}件を取り込みました`);
+                    loadRegisteredSchoolEvents();
+                }
+            } catch (error) {
+                alert("通信エラーが発生しました");
+            } finally {
+                button.disabled = false;
+                button.textContent = "今すぐ取り込む";
+                loadSchoolCalendarStatus();
+            }
+        }
+
+        async function deleteAdminSchoolEvents() {
+            if (!confirm("PDFや手入力で登録した行事をすべて削除します。\nGoogleカレンダーから取り込んだ行事は残ります。\nこの操作は元に戻せません。よろしいですか？")) return;
+            try {
+                const result = await postGas({ mode: "adminDeleteSchoolEventsBySource", adminId: ADMIN_ID, adminToken: adminToken, source: "admin" }, 60000);
+                if (result.status !== "success" || !result.message || typeof result.message.removed !== "number") {
+                    alert(result.message && typeof result.message === "string" ? result.message : "削除できませんでした。GASが新しいバージョンでデプロイされているか確認してください");
+                    return;
+                }
+                setSchoolEventStatus(`管理者が登録した行事を${result.message.removed}件削除しました`);
+                loadRegisteredSchoolEvents();
+            } catch (error) {
+                alert("通信エラーが発生しました");
             }
         }
 
@@ -1612,6 +1686,7 @@
             if (adminAccessDenied) return;
             setupSchoolEventUpload();
             loadRegisteredSchoolEvents();
+            loadSchoolCalendarStatus();
             document.getElementById("hud-menu-btn").classList.remove("open");
             document.getElementById("nav-links").classList.remove("open");
 
