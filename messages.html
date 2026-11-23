@@ -426,8 +426,8 @@
         }
     </style>
 
-    <link rel="stylesheet" href="theme.css?v=20261119events">
-    <script src="ui.js?v=20261119events"></script>
+    <link rel="stylesheet" href="theme.css?v=20261123sk">
+    <script src="ui.js?v=20261123sk"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script>window.HEIKO_FIREBASE_CHAT_ENABLED = true;</script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
@@ -470,12 +470,7 @@
             <div class="dm-header">
                 <h2>メッセージ一覧</h2>
             </div>
-            <div id="partner-list">
-                <div class="loading-box">
-                    <div class="spinner"></div>
-                    <span>読み込み中...</span>
-                </div>
-            </div>
+            <div id="partner-list" data-skeleton="list" data-count="4"></div>
         </div>
     </main>
 
@@ -761,7 +756,7 @@
             const listDiv = document.getElementById("partner-list");
             let gasPartners = cachedGasPartners;
             let hasRendered = false;
-            if (!lastPartnerSignature) listDiv.innerHTML = `<div class="loading-box"><div class="spinner"></div><span>データを読み込み中...</span></div>`;
+            if (!lastPartnerSignature && !listDiv.querySelector(".sk-wrap")) listDiv.innerHTML = heikoSkeleton.list(4);
 
             const firebaseTask = (async () => {
                 try {

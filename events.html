@@ -9,8 +9,8 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#254f3d">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="stylesheet" href="theme.css?v=20261119events">
-    <script src="ui.js?v=20261119events"></script>
+    <link rel="stylesheet" href="theme.css?v=20261123sk">
+    <script src="ui.js?v=20261123sk"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
     <style>
@@ -117,6 +117,16 @@
     </header>
 
     <main class="ev-page">
+        <div class="page-heading">
+            <h1>学校行事</h1>
+            <span class="page-help">
+                <button type="button" class="page-help-button" aria-expanded="false" aria-controls="page-help-events" aria-label="学校行事の説明">?</button>
+                <div class="page-help-pop" id="page-help-events" role="note" hidden>
+                    <p>年間行事予定をカレンダーで確認できます。日付を押すと、その日の行事が下に表示されます。</p>
+                    <p>考査・検定・休日などは色分けされています。予定は変わることがあるので、最新の情報は学校からのお知らせで確認してください。</p>
+                </div>
+            </span>
+        </div>
         <section class="ev-hero">
             <p class="ev-kicker">SCHOOL CALENDAR</p>
             <h1>学校行事</h1>
@@ -168,6 +178,7 @@
         if (adminButton && currentUserId === "admin" && localStorage.getItem("isImpersonating") !== "true") adminButton.style.display = "inline-block";
 
         let allEvents = [];
+        let eventsLoaded = false; // 最初のデータ（キャッシュ含む）が届くまではスケルトンを出す
         const today = new Date();
         let viewYear = today.getFullYear();
         let viewMonth = today.getMonth();
@@ -224,6 +235,7 @@
         function renderDetail() {
             document.getElementById("ev-detail-title").textContent = `${SE.formatDay(selectedKey, { withYear: true })}の行事`;
             const events = eventsOn(selectedKey);
+            if (!eventsLoaded) { document.getElementById("ev-detail-list").innerHTML = heikoSkeleton.lines(2); return; }
             document.getElementById("ev-detail-list").innerHTML = events.length
                 ? events.map(event => itemHtml(event, { showDate: false })).join("")
                 : '<li class="ev-empty">この日の行事はありません</li>';
@@ -234,6 +246,11 @@
             const monthStart = `${prefix}-01`;
             const monthEnd = `${prefix}-31`;
             const events = allEvents.filter(event => event.date <= monthEnd && (event.endDate || event.date) >= monthStart);
+            if (!eventsLoaded) {
+                document.getElementById("ev-month-list-title").textContent = `${viewMonth + 1}月の行事`;
+                document.getElementById("ev-month-list").innerHTML = heikoSkeleton.lines(4);
+                return;
+            }
             document.getElementById("ev-month-list-title").textContent = `${viewMonth + 1}月の行事（${events.length}件）`;
             document.getElementById("ev-month-list").innerHTML = events.length
                 ? events.map(event => itemHtml(event)).join("")
@@ -288,11 +305,13 @@
             }
             renderAll();
             const status = document.getElementById("ev-status");
-            status.textContent = "読み込み中...";
+            status.textContent = "";
             try {
-                await SE.load({ onUpdate: events => { allEvents = events; renderAll(); } });
+                await SE.load({ onUpdate: events => { allEvents = events; eventsLoaded = true; renderAll(); } });
                 status.textContent = allEvents.length ? "" : "まだ行事が登録されていません。";
             } catch (error) {
+                eventsLoaded = true;
+                renderAll();
                 status.textContent = "学校行事を読み込めませんでした。通信状態を確認してください。";
             }
         }

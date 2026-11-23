@@ -854,3 +854,69 @@ input:not([type="file"]),select,textarea {
  content:"β"; display:inline-block; margin-left:3px; padding:0 5px; border-radius:999px;
  background:#f59e0b; color:#3b2300; font-size:10px; font-weight:800; line-height:1.5; vertical-align:2px;
 }
+
+/* 各ページ上部の大きな紹介カードを一旦非表示にする（元に戻すときはこのブロックを消す） */
+.ev-hero,
+.ai-hero-copy,
+.usage-intro-card { display:none!important; }
+[data-page="ai-study"] .ai-hero { grid-template-columns:1fr!important; }
+[data-page="junior-meister"] #search-area { display:none!important; }
+
+/* ページ見出しと「？」ボタン：押したときだけページの説明を吹き出しで出す */
+.page-heading { display:flex; align-items:center; gap:8px; margin:0 0 16px; }
+.page-heading h1 { margin:0; font-size:clamp(20px,2.4vw,26px)!important; font-weight:800; color:var(--ui-ink); letter-spacing:-.02em; line-height:1.3; }
+.page-help { position:relative; display:inline-flex; }
+.page-help-button {
+ display:inline-grid; place-items:center; width:26px; height:26px; padding:0; border-radius:50%;
+ border:1px solid var(--ui-line); background:var(--ui-paper); color:var(--ui-muted);
+ font:inherit; font-size:14px; font-weight:800; line-height:1; cursor:pointer; flex:none;
+}
+.page-help-button:hover, .page-help-button[aria-expanded="true"] { background:var(--ui-soft); color:var(--ui-green); border-color:var(--ui-green); }
+.page-help-button:focus-visible { outline:3px solid var(--ui-green); outline-offset:2px; }
+.page-help-pop {
+ position:absolute; top:calc(100% + 10px); left:-12px; z-index:60; width:min(360px, calc(100vw - 32px));
+ padding:14px 16px; border-radius:14px; border:1px solid var(--ui-line); background:var(--ui-paper); color:var(--ui-ink);
+ box-shadow:0 16px 36px rgba(15,23,42,.16); font-size:13px; line-height:1.7; text-align:left; font-weight:500;
+}
+.page-help-pop::before {
+ content:""; position:absolute; top:-7px; left:20px; width:12px; height:12px; background:var(--ui-paper);
+ border-left:1px solid var(--ui-line); border-top:1px solid var(--ui-line); transform:rotate(45deg);
+}
+.page-help-pop[hidden] { display:none; }
+.page-help-pop p { margin:0; }
+.page-help-pop p + p { margin-top:8px; }
+.page-help-pop a, .page-help-pop .page-help-link { color:var(--ui-green); font-weight:800; }
+.page-help-pop .page-help-link { padding:0; border:0; background:none; font:inherit; cursor:pointer; text-decoration:underline; }
+.page-help-pop .page-help-note { padding:8px 10px; border-radius:10px; background:var(--ui-soft); font-size:12px; }
+@media(max-width:768px) {
+ .page-heading { margin-bottom:12px; }
+ .page-help { position:static; }
+ .page-heading { position:relative; }
+ .page-help-pop { left:0; width:min(360px, calc(100vw - 32px)); }
+ .page-help-pop::before { display:none; }
+}
+
+/* スケルトンスクリーン：読み込み中は、表示される内容の形をした灰色の枠を出す */
+.sk-wrap { display:contents; }
+.sk {
+ display:block; border-radius:8px;
+ background:linear-gradient(90deg, var(--ui-soft) 25%, color-mix(in srgb, var(--ui-line) 80%, var(--ui-soft)) 37%, var(--ui-soft) 63%);
+ background-size:400% 100%; animation:sk-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes sk-shimmer { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+.sk-line { height:12px; margin:8px 0; }
+.sk-line.w90 { width:90%; } .sk-line.w70 { width:70%; } .sk-line.w50 { width:50%; } .sk-line.w30 { width:30%; }
+.sk-title { height:18px; width:45%; margin:6px 0 12px; }
+.sk-pill { display:inline-block; height:22px; width:84px; border-radius:999px; }
+.sk-button { height:42px; border-radius:12px; margin-top:14px; }
+.sk-circle { flex:none; width:48px; height:48px; border-radius:50%; }
+.sk-card { padding:20px; border:1px solid var(--ui-line); border-radius:20px; background:var(--ui-paper); }
+.sk-card-head { display:flex; justify-content:space-between; gap:12px; }
+.sk-list-item { display:flex; align-items:center; gap:14px; padding:16px 20px; border-bottom:1px solid var(--ui-line); }
+.sk-list-item:last-child { border-bottom:0; }
+.sk-list-text { flex:1; min-width:0; }
+.sk-bubble { height:40px; border-radius:16px; margin:10px 0; }
+.sk-bubble.left { width:58%; margin-right:auto; } .sk-bubble.right { width:46%; margin-left:auto; }
+.sk-inline { display:inline-block; height:1em; width:8em; vertical-align:middle; }
+tr.sk-row td { padding:14px 12px; }
+@media (prefers-reduced-motion:reduce) { .sk { animation:none; } }

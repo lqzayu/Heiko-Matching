@@ -547,6 +547,24 @@
             .se-strip-item { flex: 0 0 72%; scroll-snap-align: start; }
         }
 
+        /* 検索のオートコンプリート */
+        .search-box-container { position: relative; }
+        .search-suggest {
+            position: absolute; left: 0; right: 0; top: calc(100% - 22px); z-index: 40;
+            margin: 0; padding: 6px; list-style: none;
+            border: 1px solid var(--ui-line, #e2e8f0); border-radius: 14px; background: var(--ui-paper, #fff);
+            box-shadow: 0 16px 36px rgba(15, 23, 42, .16); max-height: 320px; overflow-y: auto;
+        }
+        .search-suggest[hidden] { display: none; }
+        .search-suggest-head { padding: 6px 10px 4px; font-size: 11.5px; font-weight: 800; color: var(--ui-muted, #64748b); }
+        .search-suggest-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; cursor: pointer; color: var(--ui-ink, #1e293b); font-size: 14px; }
+        .search-suggest-item[aria-selected="true"], .search-suggest-item:hover { background: var(--ui-soft, #f1f5f9); }
+        .search-suggest-type { flex: none; min-width: 3.4em; padding: 2px 7px; border-radius: 999px; background: var(--ui-soft, #f1f5f9); color: var(--ui-muted, #64748b); font-size: 11px; font-weight: 800; text-align: center; }
+        .search-suggest-item[aria-selected="true"] .search-suggest-type { background: var(--ui-paper, #fff); }
+        .search-suggest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+        .search-suggest-text mark { background: none; color: var(--ui-green, #0f766e); font-weight: 900; }
+        .search-suggest-count { flex: none; font-size: 12px; font-weight: 700; color: var(--ui-muted, #64748b); }
+
         .list-head-actions {
             display: flex;
             align-items: center;
@@ -578,8 +596,8 @@
 
         /* 投稿ボタンを並べても見出しが1行に収まるよう、狭い画面では少しだけ小さくする */
         @media screen and (max-width: 420px) {
-            #search-area > div > h1 {
-                font-size: 21px !important;
+            #search-area .page-heading h1 {
+                font-size: 18px !important;
             }
         }
 
@@ -1328,8 +1346,8 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="theme.css?v=20261119events">
-    <script src="ui.js?v=20261119events"></script>
+    <link rel="stylesheet" href="theme.css?v=20261123sk">
+    <script src="ui.js?v=20261123sk"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
 </head>
@@ -1474,7 +1492,16 @@
                 </section>
                 <section id="search-area">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
-                        <h1 style="font-size: 1.35rem; font-weight: 800; margin: 0; color: #1e293b;">他ユーザーの募集一覧</h1>
+                        <div class="page-heading" style="margin:0;">
+                            <h1 style="font-size: 1.35rem; font-weight: 800; margin: 0; color: #1e293b;">他ユーザーの募集一覧</h1>
+                            <span class="page-help">
+                                <button type="button" class="page-help-button" aria-expanded="false" aria-controls="page-help-main" aria-label="募集一覧の説明">?</button>
+                                <div class="page-help-pop" id="page-help-main" role="note" hidden>
+                                    <p>ほかの人の勉強仲間の募集が並びます。気になる募集にはリアクションを送るか、チャットを始められます。キーワードやタグで絞り込むこともできます。</p>
+                                    <p>投稿、検索、チャット、安全機能の流れは<button type="button" class="page-help-link" onclick="openUsageGuide()">使い方</button>にまとめています。</p>
+                                </div>
+                            </span>
+                        </div>
                         <div class="list-head-actions">
                             <a class="list-post-button" href="main.html?tab=recruit" aria-label="募集を投稿する"><span aria-hidden="true">＋</span>投稿</a>
                             <button type="button" onclick="loadRecruitments()" class="btn-refresh" aria-label="募集一覧を更新" title="募集一覧を更新">
@@ -1487,15 +1514,13 @@
                         <span class="search-icon-inside">🔍</span>
                         <input type="text" id="search-input" class="search-input"
                             placeholder="キーワードやタグで検索（例: プログラミング, 部活, 1年）"
+                            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-suggest"
+                            aria-label="募集を検索" autocomplete="off"
                             oninput="renderFilteredRecruitments()">
+                        <ul class="search-suggest" id="search-suggest" role="listbox" aria-label="検索の候補" hidden></ul>
                     </div>
 
-                    <div class="user-grid" id="user-list">
-                        <div class="loading-box">
-                            <div class="spinner"></div>
-                            <span>読み込み中...</span>
-                        </div>
-                    </div>
+                    <div class="user-grid" id="user-list" data-skeleton="cards" data-count="3"></div>
 
                     <!-- 使い方の案内は、目的の募集一覧より後ろに置く -->
                     <div class="usage-intro-card">
@@ -1869,13 +1894,9 @@
             const listDiv = document.getElementById("user-list");
             const myPostContentDiv = document.getElementById("my-post-content");
 
-            listDiv.innerHTML = `
-                <div class="loading-box">
-                    <div class="spinner"></div>
-                    <span>データを更新中...</span>
-                </div>
-            `;
-            myPostContentDiv.innerHTML = "更新中...";
+            // まだ募集カードが出ていないときだけスケルトンを出す（更新のたびに一覧が消えてちらつかないように）
+            if (!listDiv.querySelector(".user-card")) listDiv.innerHTML = heikoSkeleton.cards(3);
+            if (!myPostContentDiv.dataset.loaded) myPostContentDiv.innerHTML = heikoSkeleton.lines(2);
 
             try {
                 const result = await fetchGas({ mode: "getRecruitments", email: myEmail });
@@ -1885,6 +1906,7 @@
 
                 listDiv.innerHTML = "";
                 myPostContentDiv.innerHTML = "投稿している募集はありません。";
+                myPostContentDiv.dataset.loaded = "1";
 
                 const now = Date.now();
                 const items = [...result.message].reverse().filter(item => {
@@ -1926,7 +1948,133 @@
                     ? "通信に時間がかかっています。しばらくしてから更新してください。"
                     : (e && e.message ? e.message : "原因不明のエラー");
                 listDiv.innerHTML = `<p style='color: #ef4444; font-size: 14px; grid-column: 1 / -1; text-align: center; padding: 40px 0;'>読み込みエラーが発生しました。<br><small>${escapeHtml(message)}</small></p>`;
+                if (!myPostContentDiv.dataset.loaded) myPostContentDiv.textContent = "読み込めませんでした。";
             }
+        }
+
+        // ===== 検索のオートコンプリート =====
+        // 候補は今の募集データから作る（タグ・学科・学年・名前）。結果が0件になる候補は出さない
+        const SUGGEST_FIXED_TAGS = ["数学", "英語", "国語", "理科", "社会", "専門科目", "プログラミング", "資格", "定期テスト", "課題", "放課後", "初心者歓迎"];
+        const SUGGEST_LIMIT = 6;
+        let suggestItems = [];
+        let suggestActive = -1;
+
+        // 全角・半角やカタカナ・ひらがなの違いを気にせず比べられるようにそろえる
+        function normalizeForSearch(value) {
+            return String(value || "").normalize("NFKC").toLowerCase().replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60)).trim();
+        }
+
+        function postSearchText(item) {
+            return normalizeForSearch(`${item.name} ${item.grade} ${item.dept} ${item.content} ${item.tags || ""}`);
+        }
+
+        function buildSuggestCandidates() {
+            const map = new Map();
+            const add = (text, type) => {
+                const value = String(text || "").trim();
+                if (!value || value.length > 40) return;
+                const key = normalizeForSearch(value);
+                if (!map.has(key)) map.set(key, { text: value, type, key });
+            };
+            allOtherPosts.forEach(item => {
+                String(item.tags || "").split(/[,、，\s#＃]+/).forEach(tag => add(tag, "タグ"));
+                add(item.dept, "学科");
+                add(item.grade, "学年");
+                add(item.name, "名前");
+            });
+            SUGGEST_FIXED_TAGS.forEach(tag => add(tag, "タグ"));
+            const texts = allOtherPosts.map(postSearchText);
+            return [...map.values()]
+                .map(candidate => ({ ...candidate, count: texts.filter(text => text.includes(candidate.key)).length }))
+                .filter(candidate => candidate.count > 0);
+        }
+
+        function renderSearchSuggest() {
+            const input = document.getElementById("search-input");
+            const list = document.getElementById("search-suggest");
+            if (!input || !list) return;
+            const query = normalizeForSearch(input.value);
+            const candidates = buildSuggestCandidates();
+            let heading = "";
+            if (!query) {
+                // 何も入力していないときは、よく使われている候補を出す
+                suggestItems = candidates.sort((a, b) => b.count - a.count).slice(0, SUGGEST_LIMIT);
+                heading = "よく使われているキーワード";
+            } else {
+                suggestItems = candidates
+                    .filter(candidate => candidate.key.includes(query) && candidate.key !== query)
+                    .sort((a, b) => (b.key.startsWith(query) - a.key.startsWith(query)) || (b.count - a.count) || (a.key.length - b.key.length))
+                    .slice(0, SUGGEST_LIMIT);
+            }
+            suggestActive = -1;
+            if (!suggestItems.length) { closeSearchSuggest(); return; }
+            const highlight = text => {
+                if (!query) return escapeHtml(text);
+                const index = normalizeForSearch(text).indexOf(query);
+                if (index < 0 || normalizeForSearch(text).length !== text.length) return escapeHtml(text);
+                return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + query.length))}</mark>${escapeHtml(text.slice(index + query.length))}`;
+            };
+            list.innerHTML = (heading ? `<li class="search-suggest-head" role="presentation">${heading}</li>` : "") + suggestItems.map((item, index) => `
+                <li class="search-suggest-item" id="search-suggest-${index}" role="option" aria-selected="false" data-index="${index}">
+                    <span class="search-suggest-type">${escapeHtml(item.type)}</span>
+                    <span class="search-suggest-text">${highlight(item.text)}</span>
+                    <span class="search-suggest-count">${item.count}件</span>
+                </li>`).join("");
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+            input.removeAttribute("aria-activedescendant");
+        }
+
+        function closeSearchSuggest() {
+            const input = document.getElementById("search-input");
+            const list = document.getElementById("search-suggest");
+            if (list) list.hidden = true;
+            if (input) { input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); }
+            suggestActive = -1;
+        }
+
+        function moveSearchSuggest(step) {
+            if (!suggestItems.length) return;
+            suggestActive = (suggestActive + step + suggestItems.length) % suggestItems.length;
+            document.querySelectorAll("#search-suggest .search-suggest-item").forEach((li, index) => li.setAttribute("aria-selected", String(index === suggestActive)));
+            const active = document.getElementById(`search-suggest-${suggestActive}`);
+            document.getElementById("search-input").setAttribute("aria-activedescendant", active.id);
+            active.scrollIntoView({ block: "nearest" });
+        }
+
+        function chooseSearchSuggest(index) {
+            const item = suggestItems[index];
+            if (!item) return;
+            const input = document.getElementById("search-input");
+            input.value = item.text;
+            closeSearchSuggest();
+            renderFilteredRecruitments();
+            input.focus();
+        }
+
+        function setupSearchSuggest() {
+            const input = document.getElementById("search-input");
+            const list = document.getElementById("search-suggest");
+            if (!input || !list || input.dataset.suggestReady) return;
+            input.dataset.suggestReady = "1";
+            input.addEventListener("input", renderSearchSuggest);
+            input.addEventListener("focus", renderSearchSuggest);
+            input.addEventListener("keydown", event => {
+                if (event.isComposing || event.keyCode === 229) return; // 日本語変換中のキーは無視する
+                if (event.key === "ArrowDown") { event.preventDefault(); if (list.hidden) renderSearchSuggest(); else moveSearchSuggest(1); }
+                else if (event.key === "ArrowUp") { event.preventDefault(); moveSearchSuggest(-1); }
+                else if (event.key === "Enter" && !list.hidden && suggestActive >= 0) { event.preventDefault(); chooseSearchSuggest(suggestActive); }
+                else if (event.key === "Escape" && !list.hidden) { event.preventDefault(); closeSearchSuggest(); }
+                else if (event.key === "Tab") closeSearchSuggest();
+            });
+            // 候補を押したときに入力欄のフォーカスが外れて一覧が先に閉じないよう、mousedown で選ぶ
+            list.addEventListener("mousedown", event => {
+                const option = event.target.closest(".search-suggest-item");
+                if (!option) return;
+                event.preventDefault();
+                chooseSearchSuggest(Number(option.dataset.index));
+            });
+            input.addEventListener("blur", () => setTimeout(closeSearchSuggest, 120));
         }
 
         function renderFilteredRecruitments() {
@@ -1940,10 +2088,11 @@
 
             listDiv.innerHTML = "";
 
+            // 全角・半角やカタカナ・ひらがなの違いは区別せずに探す（候補の件数と同じ基準）
+            const normalizedKeyword = normalizeForSearch(keyword);
             const filteredPosts = allOtherPosts.filter(item => {
-                if (!keyword) return true;
-                const searchTarget = `${item.name} ${item.grade} ${item.dept} ${item.content} ${item.tags || ""}`.toLowerCase();
-                return searchTarget.includes(keyword);
+                if (!normalizedKeyword) return true;
+                return postSearchText(item).includes(normalizedKeyword);
             });
 
             if (filteredPosts.length === 0) {
@@ -2449,6 +2598,7 @@
 
         document.addEventListener("DOMContentLoaded", () => {
             loadSchoolEventStrip();
+            setupSearchSuggest();
             document.getElementById("hud-menu-btn").classList.remove("open");
             document.getElementById("nav-links").classList.remove("open");
 

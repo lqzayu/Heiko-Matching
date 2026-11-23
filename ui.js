@@ -985,6 +985,89 @@ function installHeikoSharedStyles() {
 })();
 
 // メニューボタンの開閉状態を読み上げソフトに伝える（各ページの toggleMenu はクラスを切り替えるだけなので、クラスの変化に追従する）
+// スケルトンスクリーンのHTMLを作る（読み込み中だけ表示し、データが届いたら差し替える）
+const heikoSkeleton = {
+    wrap(inner, label = "読み込み中") {
+        return `<div class="sk-wrap" role="status" aria-live="polite" aria-label="${label}">${inner}</div>`;
+    },
+    // 募集カードの形
+    cards(count = 3) {
+        return this.wrap(Array.from({ length: count }, () => `
+            <div class="sk-card" aria-hidden="true">
+                <div class="sk-card-head"><span class="sk sk-pill"></span><span class="sk sk-pill"></span></div>
+                <span class="sk sk-title"></span>
+                <span class="sk sk-line w90"></span><span class="sk sk-line w70"></span>
+                <span class="sk sk-button"></span>
+            </div>`).join(""));
+    },
+    // アイコン＋2行の一覧（メッセージ一覧など）
+    list(count = 4) {
+        return this.wrap(Array.from({ length: count }, () => `
+            <div class="sk-list-item" aria-hidden="true">
+                <span class="sk sk-circle"></span>
+                <div class="sk-list-text"><span class="sk sk-line w30"></span><span class="sk sk-line w70"></span></div>
+            </div>`).join(""));
+    },
+    // テキスト行だけ
+    lines(count = 3) {
+        const widths = ["w90", "w70", "w50"];
+        return this.wrap(Array.from({ length: count }, (_, i) => `<span class="sk sk-line ${widths[i % widths.length]}" aria-hidden="true"></span>`).join(""));
+    },
+    // チャットの吹き出し
+    chat(count = 4) {
+        return this.wrap(Array.from({ length: count }, (_, i) => `<span class="sk sk-bubble ${i % 2 ? "right" : "left"}" aria-hidden="true"></span>`).join(""), "メッセージを読み込み中");
+    },
+    // 表の行（tbody に入れる）
+    rows(count, columns) {
+        return Array.from({ length: count }, (_, r) => `<tr class="sk-row" aria-hidden="true">${Array.from({ length: columns }, (_, c) => `<td><span class="sk sk-line ${["w70", "w90", "w50"][(r + c) % 3]}"></span></td>`).join("")}</tr>`).join("");
+    }
+};
+window.heikoSkeleton = heikoSkeleton;
+
+// HTMLに data-skeleton="cards|list|lines|chat|rows" を書いた場所へ、最初のスケルトンを入れる
+function fillSkeletonPlaceholders() {
+    document.querySelectorAll("[data-skeleton]").forEach(el => {
+        const type = el.dataset.skeleton;
+        const count = Number(el.dataset.count) || 3;
+        if (typeof heikoSkeleton[type] !== "function") return;
+        el.innerHTML = type === "rows" ? heikoSkeleton.rows(count, Number(el.dataset.columns) || 3) : heikoSkeleton[type](count);
+        el.removeAttribute("data-skeleton");
+    });
+}
+
+// ページ見出しの「？」ボタン：押すと説明を開き、外側を押すか Esc で閉じる
+function installPageHelp() {
+    if (window.__heikoPageHelpInstalled) return;
+    window.__heikoPageHelpInstalled = true;
+    const closeAll = except => {
+        document.querySelectorAll(".page-help-button[aria-expanded=\"true\"]").forEach(button => {
+            if (button === except) return;
+            button.setAttribute("aria-expanded", "false");
+            const pop = document.getElementById(button.getAttribute("aria-controls"));
+            if (pop) pop.hidden = true;
+        });
+    };
+    document.addEventListener("click", event => {
+        const button = event.target.closest && event.target.closest(".page-help-button");
+        if (button) {
+            const pop = document.getElementById(button.getAttribute("aria-controls"));
+            const open = button.getAttribute("aria-expanded") !== "true";
+            closeAll(button);
+            button.setAttribute("aria-expanded", String(open));
+            if (pop) pop.hidden = !open;
+            return;
+        }
+        if (!(event.target.closest && event.target.closest(".page-help-pop"))) closeAll(null);
+    });
+    document.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        const openButton = document.querySelector(".page-help-button[aria-expanded=\"true\"]");
+        if (!openButton) return;
+        closeAll(null);
+        openButton.focus();
+    });
+}
+
 function installMenuButtonAccessibility() {
     const button = document.getElementById("hud-menu-btn");
     if (!button || button.dataset.ariaSync === "1") return;
@@ -999,6 +1082,7 @@ function installMenuButtonAccessibility() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    fillSkeletonPlaceholders();
     if (document.body && document.body.dataset.page === "index" && isHeikoAuthSessionActive()) {
         window.location.replace("main.html");
         return;
@@ -1007,6 +1091,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (selector) selector.value = readThemePreference();
     installHeikoSharedStyles();
     installMenuButtonAccessibility();
+    installPageHelp();
     installPageRefreshButton();
     installRecruitmentPostButton();
     installHeikoPwaSupport();

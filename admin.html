@@ -449,7 +449,7 @@
             .hamburger-btn.open span:nth-child(3) { transform: translateY(-8px) rotate(-45deg) !important; }
         }
     </style>
-    <link rel="stylesheet" href="theme.css?v=20261119events">
+    <link rel="stylesheet" href="theme.css?v=20261123sk">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
         [data-page="admin"] .container { max-width: 1120px; margin: 28px auto 8px; }
@@ -647,7 +647,7 @@
             [data-page="admin"] .table-wrap { margin: 0 -16px; padding: 0 16px; }
         }
     </style>
-    <script src="ui.js?v=20261119events"></script>
+    <script src="ui.js?v=20261123sk"></script>
     <script src="online.js?v=20260917b" defer></script>
 </head>
 
@@ -717,9 +717,7 @@
                                 <th class="col-action">操作</th>
                             </tr>
                         </thead>
-                        <tbody id="user-table-body">
-                            <tr class="empty-row"><td colspan="4">読み込み中...</td></tr>
-                        </tbody>
+                        <tbody id="user-table-body" data-skeleton="rows" data-count="4" data-columns="4"></tbody>
                     </table>
                 </div>
             </section>
@@ -742,9 +740,7 @@
                                 <th class="col-action">操作</th>
                             </tr>
                         </thead>
-                        <tbody id="post-table-body">
-                            <tr class="empty-row"><td colspan="3">読み込み中...</td></tr>
-                        </tbody>
+                        <tbody id="post-table-body" data-skeleton="rows" data-count="3" data-columns="3"></tbody>
                     </table>
                 </div>
             </section>
@@ -769,9 +765,7 @@
                                 <th class="col-action">対応</th>
                             </tr>
                         </thead>
-                        <tbody id="report-table-body">
-                            <tr class="empty-row"><td colspan="5">読み込み中...</td></tr>
-                        </tbody>
+                        <tbody id="report-table-body" data-skeleton="rows" data-count="3" data-columns="5"></tbody>
                     </table>
                 </div>
             </section>
@@ -828,7 +822,7 @@
                     <div class="table-wrap">
                         <table class="table-school-events">
                             <thead><tr><th>日付</th><th>行事名</th><th>種類</th><th class="col-action">操作</th></tr></thead>
-                            <tbody id="se-registered-body"><tr class="empty-row"><td colspan="4">読み込み中...</td></tr></tbody>
+                            <tbody id="se-registered-body" data-skeleton="rows" data-count="3" data-columns="4"></tbody>
                         </table>
                     </div>
                 </details>
@@ -962,8 +956,8 @@
             const postBody = document.getElementById("post-table-body");
 
             if (!silent) {
-                userBody.innerHTML = `<tr class="empty-row"><td colspan="4">読み込み中...</td></tr>`;
-                postBody.innerHTML = `<tr class="empty-row"><td colspan="3">読み込み中...</td></tr>`;
+                userBody.innerHTML = heikoSkeleton.rows(4, 4);
+                postBody.innerHTML = heikoSkeleton.rows(3, 3);
             }
 
             try {
@@ -1136,7 +1130,7 @@
             if (!body) return;
 
             if (!silent) {
-                body.innerHTML = `<tr class="empty-row"><td colspan="5">読み込み中...</td></tr>`;
+                body.innerHTML = heikoSkeleton.rows(3, 5);
             }
 
             try {

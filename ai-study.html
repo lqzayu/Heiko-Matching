@@ -9,8 +9,8 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#254f3d">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="stylesheet" href="theme.css?v=20261119events">
-    <script src="ui.js?v=20261119events"></script>
+    <link rel="stylesheet" href="theme.css?v=20261123sk">
+    <script src="ui.js?v=20261123sk"></script>
     <script src="online.js?v=20260917b" defer></script>
     <style>
         .ai-page { max-width: 1080px; margin: 0 auto; padding: 46px 24px 80px; }
@@ -86,6 +86,16 @@
     </header>
 
     <main class="ai-page">
+        <div class="page-heading">
+            <h1>AI学習相談</h1>
+            <span class="page-help">
+                <button type="button" class="page-help-button" aria-expanded="false" aria-controls="page-help-ai" aria-label="AI学習相談の説明">?</button>
+                <div class="page-help-pop" id="page-help-ai" role="note" hidden>
+                    <p>今の悩みや勉強できる時間をもとに、今日から実行できる勉強方法をAIと一緒に考えます。</p>
+                    <p>相談は1日5回までです。回答への評価は、今後の推薦方法の改善にも使われます。個人情報やパスワードは入力しないでください。</p>
+                </div>
+            </span>
+        </div>
         <section class="ai-hero">
             <div class="ai-hero-copy">
                 <p class="ai-kicker">STUDY ADVISOR</p>
