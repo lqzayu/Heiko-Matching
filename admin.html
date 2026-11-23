@@ -548,7 +548,11 @@
         }
 
         [data-page="admin"] .panel table { margin-top: 0; min-width: 0; }
-        [data-page="admin"] .table-users { min-width: 560px; }
+        [data-page="admin"] .table-users { min-width: 960px; }
+        [data-page="admin"] .col-email { word-break: break-all; min-width: 180px; }
+        [data-page="admin"] .col-email a { color: inherit; text-decoration: underline; text-decoration-color: var(--ui-line, #cbd5e1); }
+        [data-page="admin"] .cell-muted { color: var(--ui-muted, #64748b); }
+        [data-page="admin"] .badge-pending { background: #fef3c7; color: #92400e; }
         [data-page="admin"] .table-posts { min-width: 520px; }
         [data-page="admin"] .table-reports { min-width: 720px; }
 
@@ -717,11 +721,14 @@
                             <tr>
                                 <th>ユーザーID</th>
                                 <th>表示名</th>
-                                <th>状態</th>
+                                <th>メールアドレス</th>
+                                <th>学年</th>
+                                <th>学科</th>
+                                <th>認証状況</th>
                                 <th class="col-action">操作</th>
                             </tr>
                         </thead>
-                        <tbody id="user-table-body" data-skeleton="rows" data-count="4" data-columns="4"></tbody>
+                        <tbody id="user-table-body" data-skeleton="rows" data-count="4" data-columns="7"></tbody>
                     </table>
                 </div>
             </section>
@@ -972,7 +979,7 @@
             const postBody = document.getElementById("post-table-body");
 
             if (!silent) {
-                userBody.innerHTML = heikoSkeleton.rows(4, 4);
+                userBody.innerHTML = heikoSkeleton.rows(4, 7);
                 postBody.innerHTML = heikoSkeleton.rows(3, 3);
             }
 
@@ -1004,7 +1011,7 @@
 
             setPanelCount("user-count", `${users.length}人`);
             if (users.length === 0) {
-                userBody.innerHTML = `<tr class="empty-row"><td colspan="4">ユーザーがいません</td></tr>`;
+                userBody.innerHTML = `<tr class="empty-row"><td colspan="7">ユーザーがいません</td></tr>`;
                 return;
             }
 
@@ -1024,10 +1031,33 @@
                 nameCell.className = "col-nowrap";
                 nameCell.textContent = u.name;
 
+                const emailCell = document.createElement("td");
+                emailCell.className = "col-email";
+                if (u.email) {
+                    const mail = document.createElement("a");
+                    mail.href = `mailto:${u.email}`;
+                    mail.textContent = u.email;
+                    emailCell.appendChild(mail);
+                } else {
+                    emailCell.textContent = "未登録";
+                    emailCell.classList.add("cell-muted");
+                }
+
+                const gradeCell = document.createElement("td");
+                gradeCell.className = "col-nowrap" + (u.grade ? "" : " cell-muted");
+                gradeCell.textContent = u.grade || "未設定";
+
+                const deptCell = document.createElement("td");
+                deptCell.className = "col-nowrap" + (u.dept ? "" : " cell-muted");
+                deptCell.textContent = u.dept || "未設定";
+
+                // 認証済み／メール認証待ち／凍結（BAN）を分けて表示する
                 const statusCell = document.createElement("td");
+                statusCell.className = "col-nowrap";
                 const statusBadge = document.createElement("span");
-                statusBadge.className = `status-badge ${u.isVerified ? "badge-active" : "badge-inactive"}`;
-                statusBadge.textContent = u.isVerified ? "正常" : "凍結/未認証";
+                const statusLabel = u.isVerified ? "認証済み" : (u.verificationPending ? "メール未認証" : "凍結中");
+                statusBadge.className = `status-badge ${u.isVerified ? "badge-active" : (u.verificationPending ? "badge-pending" : "badge-inactive")}`;
+                statusBadge.textContent = statusLabel;
                 statusCell.appendChild(statusBadge);
 
                 const actionCell = document.createElement("td");
@@ -1050,7 +1080,7 @@
                     actionCell.appendChild(actions);
                 }
 
-                tr.append(idCell, nameCell, statusCell, actionCell);
+                tr.append(idCell, nameCell, emailCell, gradeCell, deptCell, statusCell, actionCell);
                 userBody.appendChild(tr);
             });
         }

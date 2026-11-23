@@ -525,7 +525,11 @@ function doPost(e) {
           userId: userRows[i][0],
           name: userRows[i][2] || "未設定",
           email: userRows[i][5] || "",
-          isVerified: userRows[i][6] === true
+          isVerified: userRows[i][6] === true,
+          // G列が false のとき、H列に認証コードが残っていればメール認証待ち、なければ凍結（BAN）
+          verificationPending: userRows[i][6] !== true && Boolean(cleanCell(userRows[i][7])),
+          grade: cleanCell(userRows[i][13]),
+          dept: cleanCell(userRows[i][14])
         });
       }
 
