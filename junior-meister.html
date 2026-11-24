@@ -1393,6 +1393,21 @@
         .jm-rec-combo { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px dashed var(--ui-line); border-radius: 16px; color: var(--ui-ink); font-size: 13px; line-height: 1.6; }
         .jm-rec-combo strong { font-size: 12px; color: var(--ui-green); }
         .jm-beta-note { margin: 14px 0 0; padding: 10px 12px; border: 1px dashed currentColor; border-radius: 12px; font-size: 12px; line-height: 1.7; opacity: .92; }
+        /* 見出しの右端に「区分表を見る」ボタンを独立して置く */
+        .main-area > .page-heading .jm-kubun-link {
+            margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none;
+            padding: 8px 14px; border-radius: 999px; border: 1px solid var(--ui-line); background: var(--ui-paper);
+            color: var(--ui-green); font-size: 13px; font-weight: 800; text-decoration: none; white-space: nowrap;
+            transition: background-color .15s ease, border-color .15s ease;
+        }
+        .main-area > .page-heading .jm-kubun-link:hover { background: var(--ui-soft); border-color: var(--ui-green); }
+        .main-area > .page-heading .jm-kubun-link:focus-visible { outline: 3px solid var(--ui-green); outline-offset: 2px; }
+        /* スマホでは見出しを1行に収め、区分表のボタンはその下に置く */
+        @media (max-width: 600px) {
+            .main-area > .page-heading { flex-wrap: wrap; row-gap: 10px; }
+            .main-area > .page-heading .jm-kubun-link { margin-left: 0; order: 3; }
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
         .jm-sync-status { margin: 0; min-height: 1em; font-size: 12px; font-weight: 700; color: var(--ui-muted); }
         /* 各項目の折りたたみ（おすすめの資格と同じ見た目） */
         #recruit-form-area { display: flex; flex-direction: column; gap: 16px; }
@@ -1475,9 +1490,9 @@
                     <div class="page-help-pop" id="page-help-jm" role="note" hidden>
                         <p>資格・検定と級を選ぶと、全工協の区分表に沿って合計点と認定の目安を出します。同じ区分の資格は高い方だけ数えるなど、申請のルールも反映します。</p>
                         <p class="page-help-note"><strong>β版（試験公開中）</strong>：点数の計算やおすすめの資格は改善している途中です。結果は目安として使い、実際の申請は学校の担当の先生に確認してください。</p>
-                        <p><a href="https://zenkoukyo.or.jp/index_jm/" target="_blank" rel="noopener">全工協の区分表を見る</a></p>
                     </div>
                 </span>
+                <a class="jm-kubun-link" href="https://zenkoukyo.or.jp/index_jm/" target="_blank" rel="noopener">区分表を見る<span aria-hidden="true">↗</span><span class="sr-only">（全工協のサイトが新しいタブで開きます）</span></a>
             </div>
             <div class="main-content">
                 <section id="search-area">
