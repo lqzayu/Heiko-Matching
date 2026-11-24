@@ -1393,7 +1393,15 @@
         .jm-rec-combo { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px dashed var(--ui-line); border-radius: 16px; color: var(--ui-ink); font-size: 13px; line-height: 1.6; }
         .jm-rec-combo strong { font-size: 12px; color: var(--ui-green); }
         .jm-beta-note { margin: 14px 0 0; padding: 10px 12px; border: 1px dashed currentColor; border-radius: 12px; font-size: 12px; line-height: 1.7; opacity: .92; }
-        .jm-sync-status { margin: -8px 0 12px; min-height: 1em; font-size: 12px; font-weight: 700; color: var(--ui-muted); }
+        .jm-sync-status { margin: 0; min-height: 1em; font-size: 12px; font-weight: 700; color: var(--ui-muted); }
+        /* 各項目の折りたたみ（おすすめの資格と同じ見た目） */
+        #recruit-form-area { display: flex; flex-direction: column; gap: 16px; }
+        .jm-section .jm-section-body { padding-top: 18px; }
+        .jm-section .search-box-container { margin-bottom: 16px; }
+        .jm-section-tools { align-items: center; margin: 0 0 14px; }
+        /* 各項目では、ページを開いたときに光ったりアイコンが弾んだりしないようにする（開閉は高さの動きだけ） */
+        .jm-section[open], .jm-section[open] .jm-rec-summary-icon, .jm-section[open] .jm-rec-body,
+        .jm-section.is-closing, .jm-section.is-closing .jm-rec-summary-icon { animation: none; }
         .jm-sync-status.is-error { color: var(--ui-danger, #e11d48); }
         .jm-note { margin: 0; color: var(--ui-muted); font-size: 12px; line-height: 1.8; }
         .jm-note a { color: var(--ui-green); font-weight: 700; }
@@ -1501,8 +1509,16 @@
             </details>
 
             <section id="recruit-form-area">
-                <div class="sidebar-form">
-                    <h3 id="form-title">資格・検定を追加する</h3>
+                <details class="jm-rec-details jm-section" id="jm-sec-add" data-default-open="1" open>
+                    <summary class="jm-rec-summary">
+                        <span class="jm-rec-summary-icon" aria-hidden="true">➕</span>
+                        <span class="jm-rec-summary-text">
+                            <strong>資格・検定を追加する</strong>
+                            <small id="jm-sec-add-sub">分野や名前で探して、取った資格と級を登録します</small>
+                        </span>
+                        <span class="jm-rec-summary-action" aria-hidden="true"><span class="jm-rec-open-label">開く</span><span class="jm-rec-close-label">閉じる</span><span class="jm-rec-chevron"></span></span>
+                    </summary>
+                    <div class="jm-rec-body jm-section-body">
 
                     <div class="search-box-container">
                         <span class="search-icon-inside">🔍</span>
@@ -1526,10 +1542,19 @@
                     <p id="jm-item-note" class="jm-hint"></p>
 
                     <button class="btn-search" id="jm-add" type="button">追加する</button>
-                </div>
+                    </div>
+                </details>
 
-                <div class="sidebar-form">
-                    <h3 class="jm-sub-title">競技大会・コンクール（区分2・3）</h3>
+                <details class="jm-rec-details jm-section" id="jm-sec-manual">
+                    <summary class="jm-rec-summary">
+                        <span class="jm-rec-summary-icon" aria-hidden="true">🏆</span>
+                        <span class="jm-rec-summary-text">
+                            <strong>競技大会・コンクール（区分2・3）</strong>
+                            <small id="jm-sec-manual-sub">大会やコンクールの成績を手入力で追加します</small>
+                        </span>
+                        <span class="jm-rec-summary-action" aria-hidden="true"><span class="jm-rec-open-label">開く</span><span class="jm-rec-close-label">閉じる</span><span class="jm-rec-chevron"></span></span>
+                    </summary>
+                    <div class="jm-rec-body jm-section-body">
                     <p class="jm-hint">大会やコンクールの成績は種類が多いため、区分表で点数を確認して入力してください。合計点には入りますが、「区分1で20点以上」の条件には含まれません。</p>
                     <div class="jm-form-row">
                         <div class="jm-field">
@@ -1545,16 +1570,28 @@
                         </div>
                     </div>
                     <button class="btn-search" id="jm-manual-add" type="button">大会・コンクールを追加</button>
-                </div>
+                    </div>
+                </details>
             </section>
 
             <section id="jm-list-area">
-                <div class="jm-list-head">
-                    <h2 style="font-size: 1.35rem; font-weight: 800; margin: 0; color: var(--ui-ink);">取得した資格</h2>
-                    <button id="jm-clear" class="jm-clear" type="button">すべて消す</button>
-                </div>
-                <p class="jm-sync-status" id="jm-sync-status" aria-live="polite"></p>
-                <div class="user-grid" id="jm-list"></div>
+                <details class="jm-rec-details jm-section" id="jm-sec-list" data-default-open="1" open>
+                    <summary class="jm-rec-summary">
+                        <span class="jm-rec-summary-icon" aria-hidden="true">📋</span>
+                        <span class="jm-rec-summary-text">
+                            <strong>取得した資格</strong>
+                            <small id="jm-sec-list-sub">登録した資格の一覧です</small>
+                        </span>
+                        <span class="jm-rec-summary-action" aria-hidden="true"><span class="jm-rec-open-label">開く</span><span class="jm-rec-close-label">閉じる</span><span class="jm-rec-chevron"></span></span>
+                    </summary>
+                    <div class="jm-rec-body jm-section-body">
+                        <div class="jm-list-head jm-section-tools">
+                            <p class="jm-sync-status" id="jm-sync-status" aria-live="polite"></p>
+                            <button id="jm-clear" class="jm-clear" type="button">すべて消す</button>
+                        </div>
+                        <div class="user-grid" id="jm-list"></div>
+                    </div>
+                </details>
             </section>
 
             <p class="jm-note">
@@ -2049,6 +2086,8 @@
             spEl.textContent = `特別表彰の目安（ゴールド＋S/Aランク資格＋上位8資格で60点以上）：上位8資格 ${top8}点`;
 
             renderRecommendations();
+            const listSub = $("jm-sec-list-sub");
+            if (listSub) listSub.textContent = rows.length ? `${rows.length}件・合計${total}点` : "まだ資格が登録されていません";
 
             const list = $("jm-list");
             if (!rows.length) {
@@ -2240,6 +2279,8 @@
             itemSelect.value = key;
             fillGrades();
             gradeSelect.value = String(grade);
+            const addSection = $("jm-sec-add");
+            if (addSection && !addSection.open) openJmSection(addSection, false);
             $("recruit-form-area").scrollIntoView({ behavior: "smooth", block: "start" });
             itemSelect.focus({ preventScroll: true });
             notify(`${item.name}（${item.grades[grade][0]}）をフォームに入れました。取得したら「追加する」を押してください`, "info");
@@ -2254,6 +2295,64 @@
         itemSelect.addEventListener("change", fillGrades);
         $("jm-add").addEventListener("click", addEntry);
         $("jm-manual-add").addEventListener("click", addManual);
+        // ===== 各項目（資格の追加・大会・取得した資格）の折りたたみ =====
+        // おすすめの資格と同じく、高さを滑らかに動かして開け閉めし、開いた状態を端末ごとに覚える
+        const SECTION_OPEN_MS = 420;
+        const SECTION_CLOSE_MS = 480;
+        function sectionKey(details) { return `junior-meister:section-open:${details.id}:${currentUserId}`; }
+        function clearSectionHeight(body) {
+            body.classList.remove("is-expanding", "is-collapsing");
+            body.style.height = "";
+            body.style.paddingTop = "";
+            body.style.paddingBottom = "";
+        }
+        function openJmSection(details, animate = true) {
+            const body = details.querySelector(".jm-rec-body");
+            clearSectionHeight(body);
+            details.open = true;
+            const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            if (!animate || reduce) return;
+            const target = body.scrollHeight;
+            body.style.height = "0px";
+            body.style.paddingTop = "0px";
+            body.style.paddingBottom = "0px";
+            body.classList.add("is-expanding");
+            body.getBoundingClientRect();
+            body.style.height = target + "px";
+            body.style.paddingTop = "";
+            body.style.paddingBottom = "";
+            setTimeout(() => clearSectionHeight(body), SECTION_OPEN_MS);
+        }
+        function closeJmSection(details) {
+            const body = details.querySelector(".jm-rec-body");
+            const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            if (reduce) { details.open = false; return; }
+            clearSectionHeight(body);
+            body.style.height = body.offsetHeight + "px";
+            details.classList.add("is-closing");
+            body.getBoundingClientRect();
+            body.classList.add("is-collapsing");
+            setTimeout(() => {
+                details.classList.remove("is-closing");
+                clearSectionHeight(body);
+                details.open = false;
+            }, SECTION_CLOSE_MS);
+        }
+        document.querySelectorAll(".jm-section").forEach(details => {
+            try {
+                const saved = localStorage.getItem(sectionKey(details));
+                details.open = saved === null ? details.dataset.defaultOpen === "1" : saved === "1";
+            } catch (error) { /* 保存できない環境では既定のまま */ }
+            details.querySelector("summary").addEventListener("click", event => {
+                event.preventDefault();
+                if (details.classList.contains("is-closing")) return;
+                if (details.open) closeJmSection(details); else openJmSection(details);
+            });
+            details.addEventListener("toggle", () => {
+                try { localStorage.setItem(sectionKey(details), details.open ? "1" : "0"); } catch (error) { /* 無視 */ }
+            });
+        });
+
         // 開いた・閉じた状態は端末ごとに覚えておく
         const recommendOpenKey = "junior-meister:recommend-open:" + currentUserId;
         try { $("jm-recommend-area").open = localStorage.getItem(recommendOpenKey) === "1"; } catch (error) { /* 保存できない環境では閉じたまま */ }

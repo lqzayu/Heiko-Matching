@@ -252,6 +252,9 @@ function doPost(e) {
       if (!userId || !userExists(sheetUser, userId)) return createRes("error", "ログイン情報を確認できませんでした");
       if (!message || message.length > 1500) return createRes("error", "相談内容は1500文字以内で入力してください");
       if (!requestId) return createRes("error", "送信情報を確認できませんでした。ページを再読み込みしてください");
+      // 状況（達成したいこと・困っていること）が空のまま送られてもAIは呼ばない（回数とトークンを無駄にしないため）
+      const rawProfile = data.profile && typeof data.profile === "object" ? data.profile : {};
+      if (!cleanCell(rawProfile.goal) || !cleanCell(rawProfile.challenge)) return createRes("error", "相談を始める前に「達成したいこと」と「困っていること」を入力してください");
 
       const apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
       if (!apiKey) return createRes("error", "AI機能の設定がまだ完了していません。管理者にAPIキーの設定を確認してください");

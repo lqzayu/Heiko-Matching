@@ -51,6 +51,22 @@
         .ai-send:hover { background:#37674b; }
         .ai-send:disabled { cursor:wait; }
         .ai-note { margin:10px 0 0; color:var(--ui-muted); font-size:11px; }
+        .ai-field:has([required]) label::after { content:" *"; color:#d97706; }
+        .ai-field [aria-invalid="true"] { border-color:#f59e0b !important; box-shadow:0 0 0 3px rgba(245,158,11,.18) !important; }
+        .ai-profile-hint { margin:14px 0 0; padding:10px 12px; border-radius:12px; background:rgba(245,158,11,.12); color:var(--ui-ink); font-size:12.5px; font-weight:700; line-height:1.6; }
+        .ai-profile-hint[hidden] { display:none; }
+        .ai-send:disabled { opacity:.5; cursor:not-allowed; }
+
+        /* 左：事前に教える情報（スクロールしても見える位置に固定）／右：チャット */
+        @media (min-width:900px) {
+            .ai-page { max-width:1320px; display:grid; grid-template-columns:minmax(300px, 380px) minmax(0, 1fr); column-gap:24px; align-items:start; }
+            .ai-page > .page-heading { grid-column:1 / -1; }
+            .ai-page > .ai-hero { grid-column:1; display:block; margin:0; position:sticky; top:96px; }
+            .ai-page > .ai-chat-card { grid-column:2; display:flex; flex-direction:column; min-height:calc(100vh - 190px); }
+            .ai-page .ai-form-grid { grid-template-columns:1fr; }
+            .ai-page .ai-field.full { grid-column:auto; }
+            .ai-page .ai-messages { flex:1; max-height:none; min-height:320px; }
+        }
         @media (max-width:760px) {
             .ai-page { padding:28px 14px 60px; }
             .ai-hero { grid-template-columns:1fr; }
@@ -107,7 +123,8 @@
                 <div class="ai-form-grid">
                     <div class="ai-field">
                         <label for="ai-subject">教科</label>
-                        <select id="ai-subject">
+                        <select id="ai-subject" required>
+                            <option value="" disabled selected>選んでください</option>
                             <option value="未指定">まだ決まっていない</option>
                             <option>数学</option><option>英語</option><option>国語</option><option>理科</option><option>社会</option><option>専門科目</option><option>その他</option>
                         </select>
@@ -120,11 +137,11 @@
                     </div>
                     <div class="ai-field full">
                         <label for="ai-goal">達成したいこと</label>
-                        <input id="ai-goal" maxlength="300" placeholder="例：次のテストで平均点を超えたい">
+                        <input id="ai-goal" maxlength="300" placeholder="例：次のテストで平均点を超えたい" required>
                     </div>
                     <div class="ai-field full">
                         <label for="ai-challenge">困っていること</label>
-                        <input id="ai-challenge" maxlength="300" placeholder="例：勉強を始めても集中が続かない">
+                        <input id="ai-challenge" maxlength="300" placeholder="例：勉強を始めても集中が続かない" required>
                     </div>
                     <div class="ai-field full">
                         <label for="ai-preference">やりやすい方法</label>
@@ -133,6 +150,7 @@
                         </select>
                     </div>
                 </div>
+                <p class="ai-profile-hint" id="ai-profile-hint" role="status" hidden></p>
             </section>
         </section>
 
@@ -187,6 +205,35 @@
                 minutes: document.getElementById("ai-minutes").value,
                 preference: document.getElementById("ai-preference").value
             };
+        }
+
+        // 左の入力（教科・達成したいこと・困っていること）が埋まるまで相談を送れないようにする。
+        // 状況が分からないままAIに送ると、追加質問が増えて回数（トークン）を無駄に使ってしまうため
+        const REQUIRED_PROFILE_FIELDS = [
+            { id: "ai-subject", label: "教科" },
+            { id: "ai-goal", label: "達成したいこと" },
+            { id: "ai-challenge", label: "困っていること" }
+        ];
+        function missingProfileFields() {
+            return REQUIRED_PROFILE_FIELDS.filter(field => !document.getElementById(field.id).value.trim());
+        }
+        function updateAiReadiness() {
+            const missing = missingProfileFields();
+            REQUIRED_PROFILE_FIELDS.forEach(field => {
+                const el = document.getElementById(field.id);
+                el.setAttribute("aria-invalid", String(missing.includes(field) && el.dataset.touched === "1"));
+            });
+            const hint = document.getElementById("ai-profile-hint");
+            if (hint) {
+                hint.hidden = missing.length === 0;
+                hint.textContent = missing.length ? `相談を始める前に「${missing.map(f => f.label).join("」「")}」を入力してください` : "";
+            }
+            if (!waiting && !consultationCompleted) {
+                const sendButton = document.getElementById("ai-send");
+                sendButton.disabled = missing.length > 0;
+                sendButton.title = missing.length ? "左の項目を入力すると相談できます" : "";
+            }
+            return missing;
         }
 
         function setProfile(profile) {
@@ -349,7 +396,7 @@
                 showNotice(error.name === "AbortError" ? "通信に時間がかかっています。回答を再取得してください" : (error.message || "AIとの通信に失敗しました"), "error");
             } finally {
                 waiting = false;
-                if (!consultationCompleted) sendButton.disabled = false;
+                if (!consultationCompleted) updateAiReadiness();
                 if (!consultationCompleted && pendingRequest) status.textContent = "通信が不安定です。再取得できます";
             }
         }
@@ -364,6 +411,13 @@
             if (pendingRequest) {
                 requestAi(pendingRequest);
                 return;
+            }
+            const missing = updateAiReadiness();
+            if (missing.length) {
+                missing.forEach(field => { document.getElementById(field.id).dataset.touched = "1"; });
+                updateAiReadiness();
+                document.getElementById(missing[0].id).focus();
+                return showNotice(`先に「${missing.map(f => f.label).join("」「")}」を入力してください`, "error");
             }
             const input = document.getElementById("ai-input");
             const message = input.value.trim();
@@ -489,6 +543,11 @@
             window.location.replace("index.html");
         } else {
             restoreState();
+            REQUIRED_PROFILE_FIELDS.forEach(field => {
+                const el = document.getElementById(field.id);
+                ["input", "change"].forEach(type => el.addEventListener(type, () => { el.dataset.touched = "1"; updateAiReadiness(); saveState(); }));
+            });
+            updateAiReadiness();
         }
     </script>
 </body>
