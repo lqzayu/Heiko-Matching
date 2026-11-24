@@ -141,12 +141,18 @@ const HEIKO_SESSION_KEYS = ["userId", "userEmail", "userName", "profileImage", "
 const HEIKO_REMEMBER_UNTIL_KEY = "heikoRememberUntil";
 const HEIKO_SESSION_ONLY_KEY = "heikoSessionOnly";
 const HEIKO_SESSION_ACTIVE_KEY = "heikoSessionActive";
+const HEIKO_SESSION_UNTIL_KEY = "heikoSessionUntil";
 const HEIKO_REMEMBER_DAYS = 30;
+// 「ログイン情報を保存する」にチェックしない場合も、この時間はログインを保つ。
+// スマホのアプリ内ブラウザ（LINEなど）やプライベートブラウズでは、ページを移るたびに sessionStorage が消えたり
+// 書き込めなかったりするため、sessionStorage だけで判定するとログイン直後に追い出されてログイン画面に戻り続けてしまう
+const HEIKO_SESSION_HOURS = 12;
 
 function clearHeikoSession() {
     HEIKO_SESSION_KEYS.forEach(key => localStorage.removeItem(key));
     localStorage.removeItem(HEIKO_REMEMBER_UNTIL_KEY);
     localStorage.removeItem(HEIKO_SESSION_ONLY_KEY);
+    localStorage.removeItem(HEIKO_SESSION_UNTIL_KEY);
     try {
         sessionStorage.removeItem(HEIKO_SESSION_ACTIVE_KEY);
     } catch (error) {
@@ -170,9 +176,11 @@ function isHeikoAuthSessionActive() {
     if (localStorage.getItem(HEIKO_SESSION_ONLY_KEY) === "1") {
         try {
             if (sessionStorage.getItem(HEIKO_SESSION_ACTIVE_KEY) === "1") return true;
-        } catch (error) {
-            clearHeikoSession();
-            return false;
+        } catch (error) { /* sessionStorage が使えない環境では、下の時間で判定する */ }
+        const sessionUntil = Number(localStorage.getItem(HEIKO_SESSION_UNTIL_KEY));
+        if (Number.isFinite(sessionUntil) && sessionUntil > Date.now()) {
+            try { sessionStorage.setItem(HEIKO_SESSION_ACTIVE_KEY, "1"); } catch (error) { /* 書き込めなくても続ける */ }
+            return true;
         }
         clearHeikoSession();
         return false;
@@ -200,6 +208,7 @@ function saveHeikoAuthSession(authResult, remember) {
     } else {
         localStorage.removeItem(HEIKO_REMEMBER_UNTIL_KEY);
         localStorage.setItem(HEIKO_SESSION_ONLY_KEY, "1");
+        localStorage.setItem(HEIKO_SESSION_UNTIL_KEY, String(Date.now() + HEIKO_SESSION_HOURS * 60 * 60 * 1000));
     }
     return true;
 }
