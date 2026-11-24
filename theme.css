@@ -963,3 +963,9 @@ html[data-theme="dark"] .sidebar .mypage-sub { color:var(--ui-green); }
  }
  html:not([data-theme="light"]) .sidebar .mypage-sub { color:var(--ui-green); }
 }
+
+/* ホーム（募集一覧）は横幅を広く使う：中央に詰めず、カードは1枚あたり360px以上を確保して画面幅に合わせて列数を変える */
+@media (min-width:769px) {
+ [data-page="main"] > .container { max-width:1680px; padding:0 clamp(24px, 3vw, 48px); }
+ [data-page="main"] .user-grid { grid-template-columns:repeat(auto-fill, minmax(360px, 1fr))!important; }
+}
