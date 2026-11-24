@@ -523,6 +523,13 @@
             color: inherit;
         }
 
+        /* 学年・学科が未設定のときの案内 */
+        .recruit-school-gate { display: grid; gap: 4px; margin: 0 0 16px; padding: 14px 16px; border-radius: 14px; border: 1px solid #f59e0b; background: rgba(245, 158, 11, .1); color: var(--ui-ink, #1e293b); font-size: 13px; line-height: 1.6; }
+        .recruit-school-gate[hidden] { display: none; }
+        .recruit-school-gate strong { font-size: 14px; }
+        .recruit-school-gate-link { justify-self: start; margin-top: 4px; font-weight: 800; color: var(--ui-green, #0f766e); }
+        #submit-btn:disabled { opacity: .5; cursor: not-allowed; }
+
         /* 投稿画面：入力カードを募集一覧と同じく横幅いっぱいにし、学校行事の欄は出さない */
         [data-page="main"] #recruit-form-area .sidebar-form { max-width: none; }
         body.is-recruit-tab #school-events-strip { display: none !important; }
@@ -1350,8 +1357,8 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="theme.css?v=20261123sk">
-    <script src="ui.js?v=20261123sk"></script>
+    <link rel="stylesheet" href="theme.css?v=20261124card2">
+    <script src="ui.js?v=20261124card"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
 </head>
@@ -1407,7 +1414,11 @@
         <div class="sidebar">
             <a class="mypage-area" href="profile.html" aria-label="マイページを開く" style="text-decoration: none;">
                 <img id="profile-icon" class="big-profile-icon" src="" alt="プロフィール画像">
-                <div id="mypage-text">マイページ</div>
+                <span class="mypage-info">
+                    <span id="mypage-text">マイページ</span>
+                    <span class="mypage-sub" id="mypage-sub"></span>
+                </span>
+                <span class="mypage-chevron" aria-hidden="true">›</span>
             </a>
 
             <div id="my-post-area"
@@ -1426,6 +1437,11 @@
                     <input type="text" id="user-name" placeholder="マイページで名前を設定してください" readonly
                         style="margin-bottom:12px;" />
                     <p id="profile-school-summary" style="margin:-2px 0 12px; color:#64748b; font-size:12px; line-height:1.5;">学年・学科はマイページで設定してください。</p>
+                    <div class="recruit-school-gate" id="recruit-school-gate" role="alert" hidden>
+                        <strong>学年と学科を設定すると投稿できます</strong>
+                        <span>募集には学年と学科が表示されます。マイページで設定してから投稿してください。</span>
+                        <a class="recruit-school-gate-link" href="profile.html?returnTo=recruit">マイページで設定する ›</a>
+                    </div>
                     <textarea id="rec-content" rows="4" maxlength="2000" placeholder="募集内容を入力してください"
                         style="margin-bottom:12px;"></textarea>
 
@@ -1803,6 +1819,7 @@
             localStorage.setItem("profileImage", profileImage);
             localStorage.setItem("userGrade", grade);
             localStorage.setItem("userDept", dept);
+            if (typeof updateMypageSub === "function") updateMypageSub();
 
             const nameInput = document.getElementById("user-name");
             const mypageText = document.getElementById("mypage-text");
@@ -1814,6 +1831,22 @@
                 profileIcon.src = profileImage || "avatar-default.svg";
             }
             if (schoolSummary) schoolSummary.textContent = grade && dept ? `学年・学科：${grade} / ${dept}` : "学年・学科はマイページで設定してください。";
+            updateRecruitSchoolGate();
+        }
+
+        // 学年・学科が未設定のときは、投稿画面を開いた時点で知らせて投稿ボタンを押せなくする
+        // （サーバー側でも学年・学科がないと投稿できない）
+        function updateRecruitSchoolGate() {
+            const grade = localStorage.getItem("userGrade") || "";
+            const dept = localStorage.getItem("userDept") || "";
+            const ready = Boolean(grade && dept);
+            const gate = document.getElementById("recruit-school-gate");
+            const submitBtn = document.getElementById("submit-btn");
+            if (gate) gate.hidden = ready;
+            if (submitBtn && submitBtn.innerText !== "投稿中...") {
+                submitBtn.disabled = !ready;
+                submitBtn.title = ready ? "" : "マイページで学年と学科を設定すると投稿できます";
+            }
         }
 
         let userProfileRequest = null;
@@ -1881,6 +1914,7 @@
             if (searchArea) searchArea.style.display = isRecruit ? "none" : "block";
             // 投稿画面では学校行事の欄を出さない（入力カードと幅がそろわず、投稿の邪魔になるため）
             document.body.classList.toggle("is-recruit-tab", isRecruit);
+            if (isRecruit) updateRecruitSchoolGate();
             // ヘッダーの「募集投稿」「ユーザーを探す」は両方とも出したまま、今いる方だけを選択中にする
             [["nav-recruit-link", isRecruit], ["nav-search-link", !isRecruit]].forEach(([id, active]) => {
                 const link = document.getElementById(id);
@@ -2136,7 +2170,7 @@
 
                 card.innerHTML = `
                     <div style="display:flex; align-items:center; margin-bottom:12px;">
-                        <div class="user-badge">${escapeHtml(item.grade)} | ${escapeHtml(item.dept)}</div>
+                        ${item.grade || item.dept ? `<div class="user-badge">${escapeHtml([item.grade, item.dept].filter(Boolean).join(" | "))}</div>` : ""}
                         <span class="countdown-badge" ${timerAttribute}>⏳ 計算中...</span>
                     </div>
                     <h3>${escapeHtml(item.name)}</h3>

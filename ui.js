@@ -1024,6 +1024,16 @@ const heikoSkeleton = {
 };
 window.heikoSkeleton = heikoSkeleton;
 
+// サイドバーのプロフィールカードに「学年・学科」を出す（未設定なら設定を促す）
+function updateMypageSub() {
+    const el = document.getElementById("mypage-sub");
+    if (!el) return;
+    const grade = localStorage.getItem("userGrade") || "";
+    const dept = localStorage.getItem("userDept") || "";
+    el.textContent = grade || dept ? [grade, dept].filter(Boolean).join(" ・ ") : "学年・学科を設定する";
+}
+window.updateMypageSub = updateMypageSub;
+
 // HTMLに data-skeleton="cards|list|lines|chat|rows" を書いた場所へ、最初のスケルトンを入れる
 function fillSkeletonPlaceholders() {
     document.querySelectorAll("[data-skeleton]").forEach(el => {
@@ -1083,6 +1093,7 @@ function installMenuButtonAccessibility() {
 
 document.addEventListener("DOMContentLoaded", () => {
     fillSkeletonPlaceholders();
+    updateMypageSub();
     if (document.body && document.body.dataset.page === "index" && isHeikoAuthSessionActive()) {
         window.location.replace("main.html");
         return;

@@ -920,3 +920,46 @@ input:not([type="file"]),select,textarea {
 .sk-inline { display:inline-block; height:1em; width:8em; vertical-align:middle; }
 tr.sk-row td { padding:14px 12px; }
 @media (prefers-reduced-motion:reduce) { .sk { animation:none; } }
+
+/* サイドバーのプロフィールカード：アイコン・名前・学年学科を横に並べたコンパクトな形 */
+.sidebar .mypage-area {
+ display:flex!important; flex-direction:row!important; align-items:center!important; gap:14px!important;
+ padding:16px 16px 16px 18px!important; border-radius:18px!important; overflow:hidden; text-decoration:none;
+ background:linear-gradient(135deg, var(--ui-green) 0%, color-mix(in srgb, var(--ui-green) 78%, #000) 100%)!important;
+ border:1px solid color-mix(in srgb, var(--ui-paper) 14%, transparent);
+ box-shadow:0 10px 24px rgba(15,23,42,.12)!important;
+ transition:transform .2s ease, box-shadow .2s ease!important;
+}
+.sidebar .mypage-area::after { content:none!important; display:none!important; }
+.sidebar .mypage-area::before {
+ content:""; position:absolute; inset:0; pointer-events:none;
+ background:radial-gradient(120% 90% at 0% 0%, rgba(255,255,255,.14), transparent 55%);
+}
+.sidebar .mypage-area:hover { transform:translateY(-2px); box-shadow:0 14px 30px rgba(15,23,42,.18)!important; }
+.sidebar .mypage-area:focus-visible { outline:3px solid var(--ui-lime, #a3e635); outline-offset:3px; }
+.sidebar .big-profile-icon {
+ position:relative; z-index:1; flex:none; width:52px!important; height:52px!important; margin:0!important; border-radius:50%; object-fit:cover;
+ border:2px solid rgba(255,255,255,.85)!important; box-shadow:0 0 0 4px rgba(255,255,255,.12)!important;
+}
+.sidebar .mypage-info { position:relative; z-index:1; flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.sidebar #mypage-text { margin:0!important; color:#fff!important; font-size:16px!important; font-weight:800; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar .mypage-sub { color:rgba(255,255,255,.72); font-size:12px; font-weight:700; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar .mypage-chevron {
+ position:relative; z-index:1; flex:none; display:grid; place-items:center; width:28px; height:28px; border-radius:50%;
+ background:rgba(255,255,255,.14); color:#fff; font-size:18px; font-weight:800; line-height:1; transition:background-color .2s ease, transform .2s ease;
+}
+.sidebar .mypage-area:hover .mypage-chevron { background:rgba(255,255,255,.24); transform:translateX(2px); }
+@media (prefers-reduced-motion:reduce) { .sidebar .mypage-area, .sidebar .mypage-chevron { transition:none!important; } .sidebar .mypage-area:hover { transform:none; } }
+/* ダークモードでは明るい水色の上に白文字だと読みにくいので、深い色のカードにしてアクセント色はふちに使う */
+html[data-theme="dark"] .sidebar .mypage-area {
+ background:linear-gradient(135deg, #1d3550 0%, #12233a 100%)!important;
+ border-color:color-mix(in srgb, var(--ui-green) 45%, transparent);
+}
+html[data-theme="dark"] .sidebar .mypage-sub { color:var(--ui-green); }
+@media (prefers-color-scheme: dark) {
+ html:not([data-theme="light"]) .sidebar .mypage-area {
+  background:linear-gradient(135deg, #1d3550 0%, #12233a 100%)!important;
+  border-color:color-mix(in srgb, var(--ui-green) 45%, transparent);
+ }
+ html:not([data-theme="light"]) .sidebar .mypage-sub { color:var(--ui-green); }
+}

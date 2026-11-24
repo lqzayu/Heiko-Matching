@@ -1262,8 +1262,8 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="theme.css?v=20261123sk">
-    <script src="ui.js?v=20261123sk"></script>
+    <link rel="stylesheet" href="theme.css?v=20261124card2">
+    <script src="ui.js?v=20261124card"></script>
     <script src="online.js?v=20260917b" defer></script>
     <style>
         /* ジュニアマイスター計算ページ専用 */
@@ -1384,6 +1384,10 @@
         .jm-rec-lead { margin: 14px 0 16px; font-size: 13px; color: var(--ui-muted); }
         .jm-rec-grade { display: inline-block; margin-left: 8px; font-size: 13px; font-weight: 800; color: var(--ui-muted); }
         .jm-rec-gain { color: var(--ui-green); }
+        /* 資格名が長くても、点数はカードの右上に固定する */
+        .jm-rec-card .jm-card-head { display: flex; flex-wrap: nowrap !important; align-items: flex-start; gap: 12px; }
+        .jm-rec-card .jm-card-head h3 { flex: 1 1 auto; min-width: 0; margin-right: 0; }
+        .jm-rec-card .jm-card-head .jm-rec-gain { flex: none; margin-left: auto; white-space: nowrap; }
         .jm-rec-reach { margin: 0 0 8px; color: var(--ui-green); font-size: 13px; font-weight: 800; }
         .jm-rec-reason { margin: 0 0 10px; color: var(--ui-ink); font-size: 13px; line-height: 1.6; }
         .jm-rec-combo { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px dashed var(--ui-line); border-radius: 16px; color: var(--ui-ink); font-size: 13px; line-height: 1.6; }
@@ -1433,7 +1437,11 @@
         <div class="sidebar">
             <a class="mypage-area" href="profile.html" aria-label="マイページを開く" style="text-decoration: none;">
                 <img id="profile-icon" class="big-profile-icon" src="avatar-default.svg" alt="プロフィール画像">
-                <div id="mypage-text">マイページ</div>
+                <span class="mypage-info">
+                    <span id="mypage-text">マイページ</span>
+                    <span class="mypage-sub" id="mypage-sub"></span>
+                </span>
+                <span class="mypage-chevron" aria-hidden="true">›</span>
             </a>
 
             <div id="my-post-area" class="jm-score-box" aria-live="polite"
