@@ -88,6 +88,19 @@
             color: #1e293b;
         }
 
+        /* チャット見出しの左に「前の画面に戻る」矢印 */
+        .chat-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .chat-title-row #chat-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .chat-back-btn {
+            flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0;
+            border-radius: 50%; border: 1px solid var(--ui-line, #e2e8f0); background: var(--ui-paper, #fff);
+            color: var(--ui-ink, #1e293b); font-size: 24px; font-weight: 700; line-height: 1; cursor: pointer;
+            transition: background-color .15s ease, transform .15s ease;
+        }
+        .chat-back-btn span { transform: translate(-1px, -2px); }
+        .chat-back-btn:hover { background: var(--ui-soft, #f1f5f9); transform: translateX(-2px); }
+        .chat-back-btn:focus-visible { outline: 3px solid var(--ui-green, #0f766e); outline-offset: 2px; }
+
         .chat-messages {
             flex: 1;
             background: rgba(255, 255, 255, 0.6);
@@ -580,7 +593,10 @@
 
     <main class="chat-container">
         <div class="chat-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-            <span id="chat-title">対話相手: 読み込み中...</span>
+            <div class="chat-title-row">
+                <button type="button" class="chat-back-btn" id="chat-back-btn" aria-label="前の画面に戻る" title="前の画面に戻る"><span aria-hidden="true">‹</span></button>
+                <span id="chat-title">対話相手: 読み込み中...</span>
+            </div>
             <div class="chat-header-actions">
                 <button id="block-user-btn" type="button" style="border:none; border-radius:8px; padding:8px 10px; background:#fef3c7; color:#92400e; font-weight:700; cursor:pointer;">ブロック</button>
                 <button id="report-user-btn" type="button" style="border:none; border-radius:8px; padding:8px 10px; background:#fee2e2; color:#b91c1c; font-weight:700; cursor:pointer;">通報</button>
@@ -799,6 +815,15 @@
 
         // 相手の表示名がわかるときは名前で出し、ユーザーIDは補足として添える
         const targetName = localStorage.getItem("chatTargetName") || "";
+        // 「‹」ボタン：このサイトの前の画面（ホームの募集一覧やメッセージ一覧）から来ていればそこへ戻り、
+        // 直接開いた場合や外から来た場合はメッセージ一覧へ移動する
+        document.getElementById("chat-back-btn").addEventListener("click", () => {
+            let cameFromSite = false;
+            try { cameFromSite = Boolean(document.referrer) && new URL(document.referrer).origin === location.origin && !/\/chat\.html/.test(new URL(document.referrer).pathname); } catch (error) { cameFromSite = false; }
+            if (cameFromSite && history.length > 1) history.back();
+            else location.href = "messages.html";
+        });
+
         document.getElementById("chat-title").innerText = targetName && targetName !== targetEmail
             ? `💬 ${targetName}（${targetEmail}）`
             : `💬 対話相手: ${targetEmail}`;

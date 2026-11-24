@@ -313,7 +313,7 @@ function doPost(e) {
         const history = normalizeAiHistory(data.history);
         const stage = sessionUsage + 1;
         const answer = callGeminiStudyAdvisor(apiKey, profile, analysis, history, message, stage, feedbackProfile);
-        if (!answer) return createRes("error", "AIから回答を受け取れませんでした。しばらくしてから再度お試しください");
+        if (!answer) return createRes("error", describeGeminiFailure());
         const responseId = Utilities.getUuid();
         aiSheet.appendRow([
           new Date(), responseId, userId, sessionId, safeSheetText(profile.subject, 50),
@@ -1962,21 +1962,56 @@ function callGeminiStudyAdvisor(apiKey, profile, analysis, history, message, sta
     generationConfig: { maxOutputTokens: 900, responseMimeType: "text/plain" }
   };
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(GEMINI_MODEL) + ":generateContent";
-  try {
-    const response = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      headers: { "x-goog-api-key": apiKey },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) return "";
-    const data = JSON.parse(response.getContentText());
-    const parts = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
-    return Array.isArray(parts) ? parts.map(part => cleanCell(part.text)).join("\n").trim() : "";
-  } catch (error) {
-    return "";
+  lastGeminiError = { code: 0, reason: "" };
+  // 考える処理に出力枠を使い切って本文が空になったとき（MAX_TOKENS）は、枠を広げて1回だけやり直す
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = UrlFetchApp.fetch(url, {
+        method: "post",
+        contentType: "application/json",
+        headers: { "x-goog-api-key": apiKey },
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      const code = response.getResponseCode();
+      if (code < 200 || code >= 300) {
+        lastGeminiError = { code: code, reason: String(response.getContentText()).slice(0, 500) };
+        console.error("Gemini呼び出し失敗", GEMINI_MODEL, code, lastGeminiError.reason);
+        return "";
+      }
+      const data = JSON.parse(response.getContentText());
+      const candidate = data.candidates && data.candidates[0];
+      const parts = candidate && candidate.content && candidate.content.parts;
+      const text = Array.isArray(parts) ? parts.map(part => cleanCell(part.text)).join("\n").trim() : "";
+      if (text) return text;
+      const finishReason = (candidate && candidate.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "EMPTY";
+      lastGeminiError = { code: code, reason: finishReason };
+      console.error("Gemini回答が空", GEMINI_MODEL, finishReason);
+      if (finishReason === "MAX_TOKENS" && attempt === 0) {
+        payload.generationConfig.maxOutputTokens = 4096;
+        continue;
+      }
+      return "";
+    } catch (error) {
+      lastGeminiError = { code: -1, reason: String(error && error.message || error).slice(0, 300) };
+      console.error("Gemini呼び出しで例外", lastGeminiError.reason);
+      return "";
+    }
   }
+  return "";
+}
+
+let lastGeminiError = { code: 0, reason: "" };
+
+// Gemini が回答できなかった理由を、利用者に伝わる言葉にする（詳しい原因は Apps Script の「実行数」のログに残る）
+function describeGeminiFailure() {
+  const e = lastGeminiError || {};
+  if (e.code === 429) return "AIの利用回数の上限（APIの無料枠など）に達しているため、今は回答できません。時間をおいてお試しください";
+  if (e.code === 401 || e.code === 403) return "AIのAPIキーが使えない状態です。管理者にAPIキーの設定を確認してもらってください";
+  if (e.code === 400 || e.code === 404) return "AIの設定（モデル名など）に問題があるため回答できませんでした。管理者に連絡してください";
+  if (e.code >= 500) return "AIのサーバーが混み合っています。しばらくしてから再度お試しください";
+  if (/SAFETY|BLOCK|PROHIBITED/.test(String(e.reason))) return "内容の都合でAIが回答できませんでした。言い方を変えて相談してください";
+  return "AIから回答を受け取れませんでした。しばらくしてから再度お試しください";
 }
 
 // ===== 学校行事の補助関数 =====
@@ -2564,7 +2599,9 @@ function getUserTokenSecret() {
 
 function createUserSessionToken(userId, sessionVersion) {
   const payload = JSON.stringify({ userId: cleanCell(userId), version: cleanCell(sessionVersion), expiresAt: Date.now() + USER_SESSION_DURATION_MS });
-  const encodedPayload = Utilities.base64EncodeWebSafe(payload);
+  // 日本語（カタカナなど）のユーザーIDでも壊れないよう、UTF-8 を明示して符号化する。
+  // 文字コードを指定しないと日本語が「?」に化け、検証時にユーザーIDが一致せずログイン直後に追い出されていた（ASCIIのIDの結果は従来と同じ）
+  const encodedPayload = Utilities.base64EncodeWebSafe(payload, Utilities.Charset.UTF_8);
   const signature = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(encodedPayload, getUserTokenSecret()));
   return encodedPayload + "." + signature;
 }
@@ -2576,7 +2613,7 @@ function getUserIdFromSessionToken(token) {
     if (parts.length !== 2) return "";
     const expected = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0], getUserTokenSecret()));
     if (!constantTimeEquals(parts[1], expected)) return "";
-    const payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString());
+    const payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString("UTF-8"));
     if (!payload || !cleanCell(payload.userId) || Date.now() > Number(payload.expiresAt || 0)) return "";
     if (CacheService.getScriptCache().get("revoked-user-" + cleanCell(payload.userId))) return "";
     return { userId: cleanCell(payload.userId), version: cleanCell(payload.version), cacheKey: "auth-session-" + parts[1].slice(0, 48) };
