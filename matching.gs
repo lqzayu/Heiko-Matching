@@ -318,7 +318,7 @@ function doPost(e) {
         aiSheet.appendRow([
           new Date(), responseId, userId, sessionId, safeSheetText(profile.subject, 50),
           safeSheetText(profile.goal, 300), safeSheetText(profile.challenge, 300), safeSheetText(profile.minutes, 30), safeSheetText(profile.preference, 100), safeSheetText(message, 2000),
-          safeSheetText(answer, 20000), "", "", safeSheetText(analysis.label, 100), safeSheetText(GEMINI_MODEL, 100), stage, requestId
+          safeSheetText(answer, 20000), "", "", safeSheetText(analysis.label, 100), safeSheetText(lastGeminiModelUsed || GEMINI_MODEL, 100), stage, requestId
         ]);
         const responseMessage = {
           responseId: responseId,
@@ -1943,6 +1943,10 @@ function callGeminiStudyAdvisor(apiKey, profile, analysis, history, message, sta
     "医療・心理・進路の断定をせず、必要なら先生や保護者など信頼できる大人への相談を勧めてください。",
     "相談者を責めず、今日から実行できる小さな行動に落とし込んでください。",
     "過去の回答評価がある場合は調整方針を優先し、同じ不満が繰り返されない回答にしてください。",
+    // サイト側で Markdown（見出し・太字・箇条書き）と LaTeX の数式を整えて表示するので、書き方をそろえてもらう
+    "書式は、見出しは「### 」、強調は「**」、箇条書きは「- 」だけを使ってください。表やHTMLは使わないでください。",
+    "数式・計算式・単位を含む量は必ずLaTeXで書き、文中の式は $...$、独立した式は1行に $$...$$ で囲んでください。単位は \\text{} を使い、数値との間に \\, を入れてください（例: $F = ma$、$m = 2.0\\,\\text{kg}$、$a = 3.0\\,\\text{m/s}^2$）。",
+    "計算問題を出すときは、問題文・与えられた値・求めるものを分けて書き、解答と途中式は相談者が求めたときだけ、式を1行ずつ $$...$$ で示してください。",
     stage === 1
       ? "今回は最終提案をまだ出さず、相談者の状況を短く整理して、追加質問を1つだけしてください。"
       : "今回は相談を完結させてください。「状況の整理」「おすすめの勉強法」「今日やること」「続ける工夫」を含め、最後に質問は書かないでください。"
@@ -1961,47 +1965,56 @@ function callGeminiStudyAdvisor(apiKey, profile, analysis, history, message, sta
     contents: [{ role: "user", parts: [{ text: context }] }],
     generationConfig: { maxOutputTokens: 900, responseMimeType: "text/plain" }
   };
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(GEMINI_MODEL) + ":generateContent";
   lastGeminiError = { code: 0, reason: "" };
-  // 考える処理に出力枠を使い切って本文が空になったとき（MAX_TOKENS）は、枠を広げて1回だけやり直す
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const response = UrlFetchApp.fetch(url, {
-        method: "post",
-        contentType: "application/json",
-        headers: { "x-goog-api-key": apiKey },
-        payload: JSON.stringify(payload),
-        muteHttpExceptions: true
-      });
-      const code = response.getResponseCode();
-      if (code < 200 || code >= 300) {
-        lastGeminiError = { code: code, reason: String(response.getContentText()).slice(0, 500) };
-        console.error("Gemini呼び出し失敗", GEMINI_MODEL, code, lastGeminiError.reason);
+  // Gemini が混み合っている（5xx）ときは、少し待って同じモデルでやり直し、それでもだめなら代わりのモデルで回答を作る。
+  // 代わりのモデルはスクリプトプロパティ GEMINI_FALLBACK_MODEL で変えられる
+  const fallbackModel = cleanCell(PropertiesService.getScriptProperties().getProperty("GEMINI_FALLBACK_MODEL")) || "gemini-flash-lite-latest";
+  const models = [GEMINI_MODEL].concat(fallbackModel && fallbackModel !== GEMINI_MODEL ? [fallbackModel] : []);
+  for (let m = 0; m < models.length; m++) {
+    const model = models[m];
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent";
+    payload.generationConfig.maxOutputTokens = 900;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = UrlFetchApp.fetch(url, {
+          method: "post",
+          contentType: "application/json",
+          headers: { "x-goog-api-key": apiKey },
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        });
+        const code = response.getResponseCode();
+        if (code < 200 || code >= 300) {
+          lastGeminiError = { code: code, reason: String(response.getContentText()).slice(0, 500), model: model };
+          console.error("Gemini呼び出し失敗", model, code, lastGeminiError.reason);
+          if (code >= 500 && attempt === 0) { Utilities.sleep(1500); continue; } // 混雑：少し待って同じモデルでもう1回
+          if (code >= 500 || code === 404) break; // 混雑が続く・モデルが使えない：代わりのモデルへ
+          return ""; // 上限（429）やAPIキーの問題は、モデルを変えても直らない
+        }
+        const data = JSON.parse(response.getContentText());
+        const candidate = data.candidates && data.candidates[0];
+        const parts = candidate && candidate.content && candidate.content.parts;
+        const text = Array.isArray(parts) ? parts.map(part => cleanCell(part.text)).join("\n").trim() : "";
+        if (text) { lastGeminiModelUsed = model; return text; }
+        const finishReason = (candidate && candidate.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "EMPTY";
+        lastGeminiError = { code: code, reason: finishReason, model: model };
+        console.error("Gemini回答が空", model, finishReason);
+        // 考える処理に出力枠を使い切って本文が空になったときは、枠を広げてやり直す
+        if (finishReason === "MAX_TOKENS" && attempt === 0) { payload.generationConfig.maxOutputTokens = 4096; continue; }
         return "";
+      } catch (error) {
+        lastGeminiError = { code: -1, reason: String(error && error.message || error).slice(0, 300), model: model };
+        console.error("Gemini呼び出しで例外", model, lastGeminiError.reason);
+        if (attempt === 0) { Utilities.sleep(1000); continue; }
+        break;
       }
-      const data = JSON.parse(response.getContentText());
-      const candidate = data.candidates && data.candidates[0];
-      const parts = candidate && candidate.content && candidate.content.parts;
-      const text = Array.isArray(parts) ? parts.map(part => cleanCell(part.text)).join("\n").trim() : "";
-      if (text) return text;
-      const finishReason = (candidate && candidate.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || "EMPTY";
-      lastGeminiError = { code: code, reason: finishReason };
-      console.error("Gemini回答が空", GEMINI_MODEL, finishReason);
-      if (finishReason === "MAX_TOKENS" && attempt === 0) {
-        payload.generationConfig.maxOutputTokens = 4096;
-        continue;
-      }
-      return "";
-    } catch (error) {
-      lastGeminiError = { code: -1, reason: String(error && error.message || error).slice(0, 300) };
-      console.error("Gemini呼び出しで例外", lastGeminiError.reason);
-      return "";
     }
   }
   return "";
 }
 
 let lastGeminiError = { code: 0, reason: "" };
+let lastGeminiModelUsed = "";
 
 // Gemini が回答できなかった理由を、利用者に伝わる言葉にする（詳しい原因は Apps Script の「実行数」のログに残る）
 function describeGeminiFailure() {

@@ -12,6 +12,9 @@
     <link rel="stylesheet" href="theme.css?v=20261124wide">
     <script src="ui.js?v=20261125login"></script>
     <script src="online.js?v=20260917b" defer></script>
+    <!-- 数式の表示（KaTeX）。AIの回答の $F = ma$ のような式をきれいに表示する -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" crossorigin="anonymous">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js" crossorigin="anonymous" onload="window.rerenderAiAnswers && window.rerenderAiAnswers()"></script>
     <style>
         .ai-page { max-width: 1080px; margin: 0 auto; padding: 46px 24px 80px; }
         .ai-hero { display:grid; grid-template-columns:1.1fr .9fr; gap:24px; align-items:stretch; margin-bottom:24px; }
@@ -38,6 +41,19 @@
         .ai-bubble.user { align-self:flex-end; color:#fff; background:var(--ui-green); border-bottom-right-radius:5px; }
         .ai-bubble.model { align-self:flex-start; color:var(--ui-ink); background:var(--ui-paper); border:1px solid var(--ui-line); border-bottom-left-radius:5px; }
         .ai-bubble.loading { color:var(--ui-muted); font-size:13px; }
+        /* AIの回答（見出し・箇条書き・数式） */
+        .ai-bubble.rich { white-space:normal; }
+        .ai-answer > :first-child { margin-top:0; }
+        .ai-answer > :last-child { margin-bottom:0; }
+        .ai-answer p { margin:0 0 10px; }
+        .ai-answer h4 { margin:14px 0 6px; font-size:15px; font-weight:800; color:var(--ui-green); letter-spacing:-.01em; }
+        .ai-answer ul, .ai-answer ol { margin:0 0 10px; padding-left:1.4em; }
+        .ai-answer li { margin:3px 0; }
+        .ai-answer strong { font-weight:800; }
+        .ai-answer code { padding:1px 5px; border-radius:6px; background:var(--ui-soft); font-size:.92em; }
+        .ai-answer .katex { font-size:1.08em; }
+        .ai-answer .katex-display { margin:10px 0; overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+        .ai-math-fallback { white-space:nowrap; }
         .ai-feedback { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:10px; }
         .ai-feedback-question { width:100%; color:var(--ui-muted); font-size:11px; }
         .ai-feedback-saved { color:var(--ui-green); font-size:11px; font-weight:700; }
@@ -279,12 +295,93 @@
             location.href = "index.html";
         }
 
+        // ===== AIの回答の表示（簡単なMarkdownとLaTeXの数式） =====
+        function escapeAiHtml(value) {
+            return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+        }
+        function renderMath(tex, display) {
+            if (window.katex && typeof window.katex.renderToString === "function") {
+                try { return window.katex.renderToString(tex, { displayMode: display, throwOnError: false, trust: false, strict: "ignore" }); }
+                catch (error) { /* 表示できない式はそのまま出す */ }
+            }
+            return `<code class="ai-math-fallback">${escapeAiHtml(tex)}</code>`;
+        }
+        const AI_MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^$\n]+?)\$/g;
+        function renderAiInline(text) {
+            // 数式を先に取り出してから（数式の中の * や _ を太字にしないため）、残りを整える
+            const maths = [];
+            let src = String(text).replace(AI_MATH_PATTERN, (m, d1, d2, i1, i2) => {
+                const display = d1 !== undefined || d2 !== undefined;
+                maths.push(renderMath((d1 ?? d2 ?? i1 ?? i2).trim(), display));
+                return `\u0000${maths.length - 1}\u0000`;
+            });
+            src = escapeAiHtml(src)
+                .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                .replace(/`([^`]+)`/g, "<code>$1</code>");
+            return src.replace(/\u0000(\d+)\u0000/g, (m, i) => maths[Number(i)]);
+        }
+        function renderAiAnswer(text) {
+            const lines = String(text || "").replace(/\r/g, "").split("\n");
+            const out = [];
+            let list = null;
+            let para = [];
+            const flushPara = () => { if (para.length) { out.push(`<p>${para.map(renderAiInline).join("<br>")}</p>`); para = []; } };
+            const flushList = () => { if (list) { out.push(`<${list.tag}>${list.items.map(item => `<li>${renderAiInline(item)}</li>`).join("")}</${list.tag}>`); list = null; } };
+            // 複数行にまたがる $$ ... $$ は1行にまとめてから処理する
+            const joined = [];
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].trim() === "$$") {
+                    const body = [];
+                    i++;
+                    while (i < lines.length && lines[i].trim() !== "$$") body.push(lines[i++]);
+                    joined.push(`$$${body.join(" ")}$$`);
+                } else joined.push(lines[i]);
+            }
+            joined.forEach(raw => {
+                const line = raw.trimEnd();
+                const heading = line.match(/^#{1,6}\s+(.*)$/);
+                const bullet = line.match(/^\s*[-*・]\s+(.*)$/);
+                const ordered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+                if (!line.trim()) { flushPara(); flushList(); return; }
+                if (heading) { flushPara(); flushList(); out.push(`<h4>${renderAiInline(heading[1])}</h4>`); return; }
+                if (bullet || ordered) {
+                    flushPara();
+                    const tag = bullet ? "ul" : "ol";
+                    if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+                    list.items.push(bullet ? bullet[1] : ordered[2]);
+                    return;
+                }
+                flushList();
+                para.push(line);
+            });
+            flushPara();
+            flushList();
+            return out.join("");
+        }
+        // KaTeX の読み込みが回答の表示より遅れた場合は、読み込み後に数式を描き直す
+        window.rerenderAiAnswers = () => {
+            document.querySelectorAll(".ai-bubble.rich").forEach(bubble => {
+                const content = bubble.querySelector(".ai-answer");
+                if (content) content.innerHTML = renderAiAnswer(bubble.dataset.raw || "");
+            });
+        };
+
         function addBubble(text, type, responseId) {
             const empty = document.getElementById("ai-empty");
             if (empty) empty.remove();
             const bubble = document.createElement("div");
             bubble.className = "ai-bubble " + type;
-            bubble.textContent = text;
+            if (type === "model") {
+                // AIの回答は、見出し・太字・箇条書き・数式を整えて表示する
+                bubble.classList.add("rich");
+                bubble.dataset.raw = text;
+                const content = document.createElement("div");
+                content.className = "ai-answer";
+                content.innerHTML = renderAiAnswer(text);
+                bubble.appendChild(content);
+            } else {
+                bubble.textContent = text;
+            }
             if (type === "model" && responseId) {
                 const feedback = document.createElement("div");
                 feedback.className = "ai-feedback";
