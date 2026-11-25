@@ -1239,3 +1239,67 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visibl
 }
 /* 管理者リンクなど、ページ側で隠している項目は隠したままにする */
 body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):is([style*="display: none"], [style*="display:none"], [hidden]) { display:none!important; }
+
+/* ===== ホバーをなめらかに（全ページ共通・最後に置いて上書きする） =====
+   ・色／背景／影／移動をすべて同じ速さと動き方（減速カーブ）でつなぐ
+   ・ホバー時の彩度フィルターはパッと切り替わって見えるので使わない
+   ・押したときだけは素早く反応させる */
+:root { --heiko-ease-out: cubic-bezier(.22, 1, .36, 1); --heiko-hover-dur: .34s; }
+:is(button, a, .nav-item, .btn-logout, .tag-badge, [role="button"]):not(.heiko-reveal) {
+ transition-property: transform, box-shadow, background-color, border-color, color, opacity, filter !important;
+ transition-duration: var(--heiko-hover-dur) !important;
+ transition-timing-function: var(--heiko-ease-out) !important;
+}
+:is(button, a, .nav-item, .btn-logout, [role="button"]):not(:disabled):active {
+ transition-duration: .12s !important;
+}
+@media (hover:hover) and (pointer:fine) {
+ button:not(:disabled):hover, .nav-item:hover, .footer-links a:hover, .usage-step-card a:hover, .usage-step-card button:hover { filter: none; }
+ /* カード類は少しゆっくり、ふわっと浮く */
+ :is(.user-card, .ev-card, .jm-rec-details, .se-strip-item a, .partner-item, .msg-partner, .post-card, .my-post-card, .sidebar .mypage-area):not(.heiko-reveal) {
+  transition-property: transform, box-shadow, border-color, background-color, opacity !important;
+  transition-duration: .45s !important;
+  transition-timing-function: var(--heiko-ease-out) !important;
+ }
+ /* サイドメニューの項目は浮かせず、背景の色だけをじんわり変える */
+ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):hover { transform: none !important; }
+ body:has(> .navbar) .navbar .nav-links > .nav-item .nav-icon { transition: transform .34s var(--heiko-ease-out) !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+ :is(button, a, .nav-item, .btn-logout, .tag-badge, [role="button"]) { transition-duration: .01s !important; }
+}
+
+/* ===== 文字と枠をひとかたまりで動かす =====
+   浮き上がるときに文字だけが1pxずつカクッと動かないよう、ボタン・カードを1枚の層として描画し、
+   中の文字・アイコンも同じ速さと動き方でそろえる */
+@media (hover:hover) and (pointer:fine) {
+ :is(button, .nav-item, .btn-logout, .footer-links a, .usage-step-card a, .heiko-recruit-post, .heiko-jm-promo-link, .jm-kubun-link,
+     .user-card, .ev-card, .jm-rec-details, .se-strip-item a, .partner-item, .msg-partner, .post-card, .my-post-card, .sidebar .mypage-area) {
+  will-change: transform;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+ }
+ /* 浮き上がりは小数のピクセルでも滑らかに動く3D移動で、ほんの少し拡大も合わせる */
+ button:not(:disabled):hover, .nav-item:hover, .footer-links a:hover, .usage-step-card a:hover, .usage-step-card button:hover,
+ .heiko-recruit-post:hover, .heiko-jm-promo-link:hover, .jm-kubun-link:hover {
+  transform: translate3d(0, -2px, 0) scale(1.015);
+ }
+ :is(.user-card, .ev-card, .se-strip-item a, .post-card, .my-post-card):hover { transform: translate3d(0, -4px, 0) scale(1.008); }
+ .sidebar .mypage-area:hover { transform: translate3d(0, -3px, 0); }
+ /* 中の文字・アイコン・矢印も、枠と同じ動き方でつながるようにする */
+ :is(button, a, .nav-item, .user-card, .ev-card, .sidebar .mypage-area) :is(span, svg, i, small, strong, .nav-icon, .mypage-chevron) {
+  transition-property: transform, color, opacity, background-color !important;
+  transition-duration: var(--heiko-hover-dur) !important;
+  transition-timing-function: var(--heiko-ease-out) !important;
+ }
+ /* サイドメニューは、項目全体（アイコン＋文字＋背景）がそろって少し右へ動く */
+ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):hover { transform: translate3d(3px, 0, 0) !important; }
+ body:has(> .navbar) .navbar .nav-links > .nav-item:hover .nav-icon { transform: none; }
+}
+/* 縦長（下のタブバー）ではタブを動かさない */
+@media not all and (min-width:769px) and (min-aspect-ratio:1/1) {
+ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):hover { transform: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+ :is(button, a, .nav-item, .user-card, .ev-card, .sidebar .mypage-area):hover { transform: none !important; }
+}
