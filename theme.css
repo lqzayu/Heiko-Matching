@@ -1073,7 +1073,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visibl
 }
 
 /* 意見箱（外部のGoogleフォーム）：別のサイトが開くことを示すアイコン */
-.nav-links a.nav-external::after {
+.navbar a.nav-external::after {
  content:""; display:inline-block; width:.8em; height:.8em; margin-left:4px; vertical-align:-1px;
  background-color:currentColor; opacity:.75;
  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 4h6v6'/%3E%3Cpath d='M20 4 10 14'/%3E%3Cpath d='M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -1282,10 +1282,10 @@ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .bt
  /* 浮き上がりは小数のピクセルでも滑らかに動く3D移動で、ほんの少し拡大も合わせる */
  button:not(:disabled):hover, .nav-item:hover, .footer-links a:hover, .usage-step-card a:hover, .usage-step-card button:hover,
  .heiko-recruit-post:hover, .heiko-jm-promo-link:hover, .jm-kubun-link:hover {
-  transform: translate3d(0, -2px, 0) scale(1.015);
+  transform: translate3d(0, -4px, 0) scale(1.03);
  }
- :is(.user-card, .ev-card, .se-strip-item a, .post-card, .my-post-card):hover { transform: translate3d(0, -4px, 0) scale(1.008); }
- .sidebar .mypage-area:hover { transform: translate3d(0, -3px, 0); }
+ :is(.user-card, .ev-card, .se-strip-item a, .post-card, .my-post-card):hover { transform: translate3d(0, -8px, 0) scale(1.015); }
+ .sidebar .mypage-area:hover { transform: translate3d(0, -6px, 0) scale(1.01); }
  /* 中の文字・アイコン・矢印も、枠と同じ動き方でつながるようにする */
  :is(button, a, .nav-item, .user-card, .ev-card, .sidebar .mypage-area) :is(span, svg, i, small, strong, .nav-icon, .mypage-chevron) {
   transition-property: transform, color, opacity, background-color !important;
@@ -1293,7 +1293,7 @@ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .bt
   transition-timing-function: var(--heiko-ease-out) !important;
  }
  /* サイドメニューは、項目全体（アイコン＋文字＋背景）がそろって少し右へ動く */
- body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):hover { transform: translate3d(3px, 0, 0) !important; }
+ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):hover { transform: translate3d(6px, 0, 0) !important; }
  body:has(> .navbar) .navbar .nav-links > .nav-item:hover .nav-icon { transform: none; }
 }
 /* 縦長（下のタブバー）ではタブを動かさない */
@@ -1303,3 +1303,21 @@ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .bt
 @media (prefers-reduced-motion: reduce) {
  :is(button, a, .nav-item, .user-card, .ev-card, .sidebar .mypage-area):hover { transform: none !important; }
 }
+
+/* 浮いたときの影も、浮く量に合わせて少し深くする */
+@media (hover:hover) and (pointer:fine) {
+ :is(.user-card, .ev-card, .se-strip-item a, .post-card, .my-post-card):hover { box-shadow: 0 22px 44px rgba(36,60,50,.14) !important; }
+}
+
+/* 意見箱の外部リンクアイコン：アイコンだけのメニュー（細いサイドメニュー・縦長のヘッダー）では右上に小さく重ねる */
+@media (min-width:769px) and (max-width:1199px) and (min-aspect-ratio:1/1) {
+ body:has(> .navbar) .navbar .nav-secondary > a.nav-external::after { display:block!important; position:absolute; top:7px; right:calc(50% - 20px); width:10px; height:10px; margin:0; opacity:.8; }
+}
+@media not all and (min-width:769px) and (min-aspect-ratio:1/1) {
+ body:has(> .navbar) .navbar .nav-secondary > a.nav-external { position:relative; }
+ body:has(> .navbar) .navbar .nav-secondary > a.nav-external::after { position:absolute; top:5px; right:4px; width:10px; height:10px; margin:0; opacity:.8; }
+}
+
+/* ハンバーガーボタンは廃止（ページや ui.js 側の指定より強くして確実に隠す） */
+html body .navbar > button.hamburger-btn.hamburger-btn,
+html body .navbar .hamburger-btn { display:none!important; }
