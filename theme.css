@@ -1545,3 +1545,13 @@ html body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscal
 
 /* 顔認証の説明は列の幅に合わせて自然に折り返す */
 .login-face-caption br { display:none; }
+
+/* ログイン画面の左側は、元の文字だけの紹介に戻す（紹介パネルは使わない） */
+.login-hero { display:none!important; }
+@media (min-width:1240px) {
+ [data-page="index"] .login-container::before {
+  content:"HEIKO MATCHING\A\A学ぶ時間に、\A仲間がいる。\A\A気になる募集から、\A新しい会話をはじめよう。"!important;
+  display:block!important; white-space:pre-line; align-self:center;
+  color:var(--ui-green); font-size:clamp(28px,3vw,44px); line-height:1.65; font-weight:700; letter-spacing:-.055em;
+ }
+}

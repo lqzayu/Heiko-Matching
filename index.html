@@ -902,7 +902,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261125login3">
+    <link rel="stylesheet" href="theme.css?v=20261125login4">
 
     <style>
         #remember-login:checked + .remember-login-checkmark {
@@ -942,18 +942,6 @@
 
     <div class="login-container">
 
-        <!-- 広い画面だけで表示する、サービスの紹介（狭い画面では隠して、フォームだけにする） -->
-        <aside class="login-hero" aria-labelledby="login-hero-title">
-            <p class="login-hero-kicker">HEIKO MATCHING</p>
-            <h2 class="login-hero-title" id="login-hero-title">学ぶ時間に、<br>仲間がいる。</h2>
-            <p class="login-hero-lead">平工生どうしで、いっしょに勉強する仲間を見つけよう。<br>気になる募集から、新しい会話をはじめられます。</p>
-            <ul class="login-hero-features">
-                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><div><strong>仲間を探す</strong><span>学年・学科・タグで、勉強仲間の募集を探せます</span></div></li>
-                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.5-5.6A8.5 8.5 0 1 1 21 12Z"/></svg></span><div><strong>メッセージ</strong><span>気になった人と、1対1でやり取りできます</span></div></li>
-                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8Z"/></svg></span><div><strong>AI学習相談・JM計算</strong><span>勉強方法の相談や、資格の点数計算もできます</span></div></li>
-                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg></span><div><strong>学校行事</strong><span>これからの行事をカレンダーで確認できます</span></div></li>
-            </ul>
-        </aside>
 
         <div class="login-card">
 
@@ -1326,6 +1314,17 @@
             if (!/[0-9]/.test(password)) return "パスワードに数字を1文字以上含めてください";
             if (!/[^A-Za-z0-9]/.test(password)) return "パスワードに記号を1文字以上含めてください";
             if (hasWeakNumberSequence(password)) return "同じ数字4桁の繰り返しや、1234・4321のような4桁の連番は使用できません";
+            return "";
+        }
+
+        // 新規登録のユーザーIDの決まり。サーバー側（matching.gs の isAllowedNewUserId）と同じ条件にする。
+        // ログイン時には使わない。過去に日本語などで登録した人が入れなくなるため
+        function validateUserId(userId) {
+            if (userId.length < 3) return "ユーザーIDは3文字以上で入力してください";
+            if (userId.length > 64) return "ユーザーIDは64文字以内で入力してください";
+            if (!/^[A-Za-z0-9_-]+$/.test(userId)) {
+                return "ユーザーIDは半角の英数字・アンダースコア（_）・ハイフン（-）だけで入力してください";
+            }
             return "";
         }
 
@@ -2234,6 +2233,8 @@
             const confirm = document.getElementById("confirm-password").value;
 
             if (!userId || !name || !email || !password || !confirm) return updateMsg("全項目を入力してください", "error");
+            const userIdError = validateUserId(userId);
+            if (userIdError) return updateMsg(userIdError, "error");
             const passwordError = validatePassword(password);
             if (passwordError) return updateMsg(passwordError, "error");
             if (password !== confirm) return updateMsg("パスワードが一致しません", "error");

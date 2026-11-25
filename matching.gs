@@ -686,6 +686,7 @@ function doPost(e) {
       const registerUserId = cleanCell(data.userId);
       const registerEmail = cleanCell(data.email).toLowerCase();
       if (!isSafeIdentifier(registerUserId)) return createRes("error", "ユーザーIDに使用できない文字が含まれています");
+      if (!isAllowedNewUserId(registerUserId)) return createRes("error", USER_ID_RULE_MESSAGE);
       if (registerUserId.toLowerCase() === ADMIN_USER_ID) return createRes("error", "このユーザーIDは使用できません");
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registerEmail)) return createRes("error", "メールアドレスの形式を確認してください");
       const passwordError = validatePasswordPolicy(data.password);
@@ -696,15 +697,19 @@ function doPost(e) {
       if (data.faceFeatures && !isValidFaceFeatures(data.faceFeatures)) {
         return createRes("error", "顔情報の形式が正しくないか、データが大きすぎます");
       }
-      if (!claimCooldown("register-mail-" + registerUserId, 60)) return createRes("error", "認証メールは1分後に再送できます");
+      if (!claimCooldown("register-mail-" + normalizeUserId(registerUserId), 60)) return createRes("error", "認証メールは1分後に再送できます");
 
       const rows = sheetUser.getLastRow() > 0 ? sheetUser.getDataRange().getValues() : [];
       let existingRowIndex = -1;
-      for (let i = 0; i < rows.length; i++) {
-        if (cleanCell(rows[i][0]) === registerUserId) {
+      for (let i = 1; i < rows.length; i++) {
+        const savedUserId = cleanCell(rows[i][0]);
+        if (savedUserId === registerUserId) {
           existingRowIndex = i + 1;
+        } else if (savedUserId && normalizeUserId(savedUserId) === normalizeUserId(registerUserId)) {
+          // 大文字小文字だけが違うIDは、別人として登録させない
+          return createRes("error", "このユーザーIDは既に使われています。大文字と小文字の違いは区別されません");
         }
-        if (i > 0 && cleanCell(rows[i][5]).toLowerCase() === registerEmail && cleanCell(rows[i][0]) !== registerUserId) return createRes("error", "このメールアドレスは既に使用されています");
+        if (cleanCell(rows[i][5]).toLowerCase() === registerEmail && savedUserId !== registerUserId) return createRes("error", "このメールアドレスは既に使用されています");
       }
 
       if (existingRowIndex !== -1 && rows[existingRowIndex - 1][6] === true) {
@@ -745,7 +750,11 @@ function doPost(e) {
           if (savedEmail && savedEmail === registerEmail.toLowerCase() && savedUserId !== registerUserId) {
             return createRes("error", "このメールアドレスは既に登録されています");
           }
-          if (savedUserId === registerUserId) latestExistingRowIndex = i + 1;
+          if (savedUserId === registerUserId) {
+            latestExistingRowIndex = i + 1;
+          } else if (savedUserId && normalizeUserId(savedUserId) === normalizeUserId(registerUserId)) {
+            return createRes("error", "このユーザーIDは既に使われています。大文字と小文字の違いは区別されません");
+          }
         }
         if (latestExistingRowIndex !== -1 && latestRows[latestExistingRowIndex - 1][6] === true) {
           return createRes("error", "このユーザーIDは既に登録されています");
@@ -843,11 +852,13 @@ function doPost(e) {
     if (mode === "login") {
       if (!sheetUser || sheetUser.getLastRow() === 0) return createRes("error", "ユーザーが見つかりません");
       const loginUserId = cleanCell(data.email).slice(0, 64);
-      const loginAttemptKey = "login-attempt-" + loginUserId;
+      const loginAttemptKey = "login-attempt-" + normalizeUserId(loginUserId);
       const loginAttempts = getAttemptCount(loginAttemptKey);
       if (loginAttempts >= 10) return createRes("error", "ログイン試行回数が上限に達しました。10分後にもう一度お試しください");
       const rows = sheetUser.getDataRange().getValues();
-      const userIndex = rows.findIndex((row, index) => index > 0 && cleanCell(row[0]) === loginUserId);
+      // 大文字小文字が違っても同じ人として扱う。見つかった行の値（user[0]）をそのまま使うので、
+      // チャットや募集など既存データの持ち主は変わらない
+      const userIndex = findUserRowIndex(rows, loginUserId);
       const user = userIndex >= 0 ? rows[userIndex] : null;
 
       if (!user) {
@@ -891,14 +902,15 @@ function doPost(e) {
       const currentLandmarks = data.currentFeatures;
       const currentSamples = Array.isArray(data.currentFeaturesSamples) ? data.currentFeaturesSamples : [];
       if (!userId) return createRes("error", "顔認証前にユーザーIDを入力してください。");
-      const faceAttemptKey = "face-attempt-" + userId.slice(0, 64);
+      const faceAttemptKey = "face-attempt-" + normalizeUserId(userId).slice(0, 64);
       const faceAttempts = getAttemptCount(faceAttemptKey);
       if (faceAttempts >= 5) return createRes("error", "顔認証の試行回数が上限に達しました。10分後にもう一度お試しください");
       if (!Array.isArray(currentLandmarks)) return createRes("error", "顔情報を取得できませんでした。");
       if (currentSamples.length < 2) return createRes("error", "顔情報を安定して取得できませんでした。もう一度お試しください。");
 
       const rows = sheetUser.getDataRange().getValues();
-      const userRow = rows.find(row => row[0] && row[0].toString().trim() === userId);
+      const faceRowIndex = findUserRowIndex(rows, userId);
+      const userRow = faceRowIndex >= 0 ? rows[faceRowIndex] : null;
 
       if (!userRow) return createRes("error", "ユーザーIDが見つかりません。");
       if (userRow[6] !== true) return createRes("error", "メール認証が完了していません。");
@@ -1626,20 +1638,18 @@ function doPost(e) {
 
     if (mode === "forgotPassword") {
       const userId = data.userId;
-      if (!claimCooldown("forgot-password-" + cleanCell(userId), 60)) return createRes("success", "MAIL_SENT_IF_EXISTS");
+      if (!claimCooldown("forgot-password-" + normalizeUserId(userId), 60)) return createRes("success", "MAIL_SENT_IF_EXISTS");
       if (!sheetUser || sheetUser.getLastRow() === 0) return createRes("error", "ユーザーが見つかりません");
       const rows = sheetUser.getDataRange().getValues();
 
-      let userRowIndex = -1;
-      for (let i = 0; i < rows.length; i++) {
-        if (rows[i][0] === userId) {
-          userRowIndex = i + 1;
-          break;
-        }
-      }
-      if (userRowIndex === -1) return createRes("success", "MAIL_SENT_IF_EXISTS");
+      const forgotRowIndex = findUserRowIndex(rows, userId);
+      if (forgotRowIndex === -1) return createRes("success", "MAIL_SENT_IF_EXISTS");
+      const userRowIndex = forgotRowIndex + 1;
 
-      const row = rows[userRowIndex - 1];
+      const row = rows[forgotRowIndex];
+      // 入力された文字ではなく、シートに保存されている正式なIDを使う。
+      // 大文字小文字が違う入力でも、再設定リンクが正しく開けるようにするため
+      const canonicalUserId = cleanCell(row[0]);
       const email = row[5];
       if (!email) return createRes("success", "MAIL_SENT_IF_EXISTS");
 
@@ -1649,9 +1659,9 @@ function doPost(e) {
       sheetUser.getRange(userRowIndex, 10).setValue(token);
       sheetUser.getRange(userRowIndex, 11).setValue(expiry);
 
-      const resetLink = `${SITE_URL}reset.html?id=${encodeURIComponent(userId)}&token=${token}`;
+      const resetLink = `${SITE_URL}reset.html?id=${encodeURIComponent(canonicalUserId)}&token=${token}`;
 
-      sendPasswordResetMail(email, cleanCell(userId), resetLink);
+      sendPasswordResetMail(email, canonicalUserId, resetLink);
 
       return createRes("success", "MAIL_SENT_IF_EXISTS");
     }
@@ -1664,14 +1674,9 @@ function doPost(e) {
       if (!sheetUser || sheetUser.getLastRow() === 0) return createRes("error", "無効なリンクです。");
       const rows = sheetUser.getDataRange().getValues();
 
-      let userRowIndex = -1;
-      for (let i = 1; i < rows.length; i++) {
-        if (rows[i][0] === userId) {
-          userRowIndex = i + 1;
-          break;
-        }
-      }
-      if (userRowIndex === -1) return createRes("error", "無効なリンクです");
+      const resetRowIndex = findUserRowIndex(rows, userId);
+      if (resetRowIndex === -1) return createRes("error", "無効なリンクです");
+      const userRowIndex = resetRowIndex + 1;
 
       const savedToken = rows[userRowIndex - 1][9];
       const savedExpiry = rows[userRowIndex - 1][10];
@@ -2382,6 +2387,49 @@ function recordAttemptFailure(key, currentCount, seconds) {
 function clearAttemptFailures(key) {
   const cacheKey = String(key || "").slice(0, 240);
   if (cacheKey) CacheService.getScriptCache().remove(cacheKey);
+}
+
+// ===== ユーザーIDの決まり =====
+// 使える文字は英数字・アンダースコア・ハイフンだけ。大文字と小文字は区別しない。
+// この制限は「新しく作るID」だけに適用する。
+// 過去に日本語などで登録した人がログインできなくなるのを避けるため、既存IDの照合には使わない。
+const USER_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const USER_ID_MIN_LENGTH = 3;
+const USER_ID_MAX_LENGTH = 64;
+const USER_ID_RULE_MESSAGE = "ユーザーIDは半角の英数字・アンダースコア（_）・ハイフン（-）で、"
+  + USER_ID_MIN_LENGTH + "文字以上" + USER_ID_MAX_LENGTH + "文字以内にしてください";
+
+// 新しく作るユーザーIDが決まりに合っているか調べる
+function isAllowedNewUserId(value) {
+  const text = cleanCell(value);
+  if (text.length < USER_ID_MIN_LENGTH || text.length > USER_ID_MAX_LENGTH) return false;
+  return USER_ID_PATTERN.test(text);
+}
+
+// 大文字小文字をそろえた形。重複チェックと照合に使う
+function normalizeUserId(value) {
+  return cleanCell(value).toLowerCase();
+}
+
+// シートからユーザーの行を探す（0起点の行番号。見つからなければ -1）。
+// まず完全一致で探し、見つからなければ大文字小文字を無視して探す。
+// 大文字小文字違いの候補が2つ以上あるときは、どれが本人か決められないので
+// 「見つからない」として扱う。別人のアカウントにログインさせないため。
+function findUserRowIndex(rows, inputUserId) {
+  const target = cleanCell(inputUserId);
+  if (!target) return -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (cleanCell(rows[i][0]) === target) return i;
+  }
+  const lowered = target.toLowerCase();
+  let found = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (normalizeUserId(rows[i][0]) === lowered) {
+      if (found !== -1) return -1;
+      found = i;
+    }
+  }
+  return found;
 }
 
 function isSafeIdentifier(value) {
