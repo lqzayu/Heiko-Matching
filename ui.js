@@ -986,6 +986,120 @@ function installHeikoSharedStyles() {
 })();
 
 // メニューボタンの開閉状態を読み上げソフトに伝える（各ページの toggleMenu はクラスを切り替えるだけなので、クラスの変化に追従する）
+// =====================================================================
+// UI / UX アニメーション（全ページ共通）
+// =====================================================================
+const HEIKO_REDUCED_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+// 画面に入ったときにふわっと出す要素（後から追加されるカードにも自動で付ける）
+const HEIKO_REVEAL_SELECTOR = [
+    ".sidebar > *", ".user-card", ".se-strip", ".ev-card", ".partner-item", ".panel",
+    ".jm-score-box", ".jm-rec-details", ".jm-card:not(.jm-rec-card)", ".sidebar-form",
+    ".ai-profile", ".ai-chat-card", ".profile-card", ".dm-header", ".usage-step-card",
+    ".page-heading", ".page-title-bar"
+].join(",");
+
+function installHeikoMotion() {
+    if (window.__heikoMotionInstalled || HEIKO_REDUCED_MOTION || !("IntersectionObserver" in window)) return;
+    window.__heikoMotionInstalled = true;
+    document.documentElement.classList.add("heiko-motion");
+
+    let batch = 0;
+    let batchTimer = null;
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const el = entry.target;
+            observer.unobserve(el);
+            // 同時に画面に入った要素は、少しずつずらして順番に出す
+            el.style.setProperty("--reveal-delay", `${Math.min(batch, 8) * 55}ms`);
+            batch++;
+            clearTimeout(batchTimer);
+            batchTimer = setTimeout(() => { batch = 0; }, 120);
+            requestAnimationFrame(() => el.classList.add("is-visible"));
+            // 出し終わったら専用のクラスを外し、ホバーで浮く動きなど元の見た目に戻す
+            setTimeout(() => {
+                el.classList.remove("heiko-reveal", "is-visible", "heiko-reveal-done");
+                el.style.removeProperty("--reveal-delay");
+            }, 1100);
+        });
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.06 });
+
+    const prepare = root => {
+        const nodes = [];
+        if (root.matches && root.matches(HEIKO_REVEAL_SELECTOR)) nodes.push(root);
+        if (root.querySelectorAll) nodes.push(...root.querySelectorAll(HEIKO_REVEAL_SELECTOR));
+        nodes.forEach(el => {
+            if (el.dataset.heikoRevealed || el.closest(".sk-wrap")) return;
+            el.dataset.heikoRevealed = "1";
+            el.classList.add("heiko-reveal");
+            observer.observe(el);
+        });
+    };
+    prepare(document.body);
+    new MutationObserver(mutations => {
+        mutations.forEach(m => m.addedNodes.forEach(node => { if (node.nodeType === 1) prepare(node); }));
+    }).observe(document.body, { childList: true, subtree: true });
+    // 念のため：何かの理由で画面に入った判定が来なくても、2.5秒後には必ず表示する
+    setTimeout(() => document.querySelectorAll(".heiko-reveal:not(.is-visible)").forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.top < innerHeight && r.bottom > 0) el.classList.add("is-visible");
+    }), 2500);
+}
+
+// ボタンの波紋（押した位置から広がる）
+const HEIKO_RIPPLE_SELECTOR = "button:not(.hamburger-btn):not(.page-help-button):not(.ev-day):not(.chat-back-btn):not(.jm-rec-summary-action), .btn-search, .btn-match, .btn-reload, .heiko-recruit-post, .list-post-button, .usage-intro-button, .usage-guide-primary-link, .jm-kubun-link";
+function installHeikoPress() {
+    if (window.__heikoPressInstalled) return;
+    window.__heikoPressInstalled = true;
+    document.addEventListener("pointerdown", event => {
+        const el = event.target.closest && event.target.closest(HEIKO_RIPPLE_SELECTOR);
+        if (!el || el.disabled) return;
+        el.classList.add("heiko-press");
+        if (HEIKO_REDUCED_MOTION) return;
+        const style = getComputedStyle(el);
+        if (style.display === "inline" || el.closest(".nav-links")) return;
+        el.classList.add("heiko-ripple-host");
+        const rect = el.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height) * 2.2;
+        const ripple = document.createElement("span");
+        ripple.className = "heiko-ripple";
+        ripple.setAttribute("aria-hidden", "true");
+        ripple.style.width = ripple.style.height = `${size}px`;
+        ripple.style.left = `${event.clientX - rect.left - size / 2}px`;
+        ripple.style.top = `${event.clientY - rect.top - size / 2}px`;
+        el.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 650);
+    }, { passive: true });
+}
+
+// ヘッダー：スクロールしたら影をつける
+function installHeikoHeaderShadow() {
+    const navbar = document.querySelector(".navbar");
+    if (!navbar) return;
+    const update = () => navbar.classList.toggle("is-scrolled", window.scrollY > 8);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+}
+
+// 数字をなめらかに増減させる（JM計算の合計点など）
+function heikoCountUp(el, to, duration = 600) {
+    if (!el) return;
+    const target = Number(to) || 0;
+    const from = Number(el.dataset.countValue ?? el.textContent) || 0;
+    el.dataset.countValue = String(target);
+    if (HEIKO_REDUCED_MOTION || from === target) { el.textContent = String(target); return; }
+    const start = performance.now();
+    const step = now => {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        el.textContent = String(Math.round(from + (target - from) * eased));
+        if (t < 1) requestAnimationFrame(step);
+        else { el.classList.remove("heiko-bump"); void el.offsetWidth; el.classList.add("heiko-bump"); }
+    };
+    requestAnimationFrame(step);
+}
+window.heikoCountUp = heikoCountUp;
+
 // スケルトンスクリーンのHTMLを作る（読み込み中だけ表示し、データが届いたら差し替える）
 const heikoSkeleton = {
     wrap(inner, label = "読み込み中") {
@@ -1095,6 +1209,9 @@ function installMenuButtonAccessibility() {
 document.addEventListener("DOMContentLoaded", () => {
     fillSkeletonPlaceholders();
     updateMypageSub();
+    installHeikoMotion();
+    installHeikoPress();
+    installHeikoHeaderShadow();
     if (document.body && document.body.dataset.page === "index" && isHeikoAuthSessionActive()) {
         window.location.replace("main.html");
         return;

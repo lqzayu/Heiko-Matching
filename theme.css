@@ -969,3 +969,105 @@ html[data-theme="dark"] .sidebar .mypage-sub { color:var(--ui-green); }
  [data-page="main"] > .container { max-width:1680px; padding:0 clamp(24px, 3vw, 48px); }
  [data-page="main"] .user-grid { grid-template-columns:repeat(auto-fill, minmax(360px, 1fr))!important; }
 }
+
+
+/* =====================================================================
+   UI / UX アニメーション（全ページ共通）
+   - 表示：カードや欄が画面に入ったとき、下からふわっと順番に現れる
+   - 操作：ボタンを押すと波紋が広がり、少し沈む／ホバーで浮く
+   - 画面遷移：ページを移るときにふわっと切り替わる（対応ブラウザのみ）
+   - ヘッダー：スクロールすると影がついて浮く
+   動きを減らす設定の端末では、すべて止める
+   ===================================================================== */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: heiko-vt-out .22s cubic-bezier(.4,0,1,1) both; }
+::view-transition-new(root) { animation: heiko-vt-in .32s cubic-bezier(0,0,.2,1) both; }
+@keyframes heiko-vt-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes heiko-vt-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* 表示のアニメーション（JS が html に heiko-motion を付けたときだけ。JS が動かない環境では最初から表示） */
+html.heiko-motion .heiko-reveal {
+ opacity: 0; transform: translateY(16px) scale(.985);
+ transition: opacity .55s cubic-bezier(.22,1,.36,1), transform .6s cubic-bezier(.22,1,.36,1);
+ transition-delay: var(--reveal-delay, 0ms);
+}
+html.heiko-motion .heiko-reveal.is-visible { opacity: 1; transform: none; }
+html.heiko-motion .heiko-reveal.is-visible.heiko-reveal-done { transition-delay: 0ms; }
+
+/* ヘッダー：スクロールしたら影をつける */
+.navbar { transition: box-shadow .25s ease, background-color .25s ease, backdrop-filter .25s ease; }
+.navbar.is-scrolled { box-shadow: 0 10px 30px rgba(15,23,42,.10); }
+
+/* メニューの項目：ホバーで下線が伸びる */
+.navbar .nav-links > .nav-item { position: relative; }
+@media (min-width:769px) {
+ .navbar .nav-links > .nav-item::after {
+  content: ""; position: absolute; left: 14px; right: 14px; bottom: 4px; height: 2px; border-radius: 2px;
+  background: currentColor; transform: scaleX(0); transform-origin: left center; opacity: .55;
+  transition: transform .28s cubic-bezier(.22,1,.36,1);
+ }
+ .navbar .nav-links > .nav-item:hover::after, .navbar .nav-links > .nav-item.active::after { transform: scaleX(1); }
+}
+
+/* スマホのメニュー：項目が上から順に現れる */
+@media (max-width:768px) {
+ .nav-links.open > * { animation: heiko-menu-item .36s cubic-bezier(.22,1,.36,1) both; }
+ .nav-links.open > *:nth-child(1) { animation-delay: .02s; } .nav-links.open > *:nth-child(2) { animation-delay: .05s; }
+ .nav-links.open > *:nth-child(3) { animation-delay: .08s; } .nav-links.open > *:nth-child(4) { animation-delay: .11s; }
+ .nav-links.open > *:nth-child(5) { animation-delay: .14s; } .nav-links.open > *:nth-child(6) { animation-delay: .17s; }
+ .nav-links.open > *:nth-child(7) { animation-delay: .20s; } .nav-links.open > *:nth-child(8) { animation-delay: .23s; }
+ .nav-links.open > *:nth-child(9) { animation-delay: .26s; } .nav-links.open > *:nth-child(n+10) { animation-delay: .29s; }
+}
+@keyframes heiko-menu-item { from { opacity: 0; transform: translateY(-8px); } }
+
+/* ボタン：押すと少し沈む＋波紋 */
+.heiko-press { transition: transform .12s ease, box-shadow .2s ease, background-color .2s ease, border-color .2s ease, opacity .2s ease; }
+.heiko-press:active:not(:disabled) { transform: scale(.97); }
+.heiko-ripple-host { position: relative; overflow: hidden; isolation: isolate; }
+.heiko-ripple {
+ position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
+ background: currentColor; opacity: .22; transform: scale(0);
+ animation: heiko-ripple .6s cubic-bezier(.22,1,.36,1) forwards;
+}
+@keyframes heiko-ripple { to { transform: scale(1); opacity: 0; } }
+
+/* カード：ホバーで浮く（タッチ端末では動かさない） */
+@media (hover:hover) and (pointer:fine) {
+ .ev-card, .jm-rec-details, .se-strip-item a, .partner-item, .ai-profile, .ai-chat-card {
+  transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease, border-color .25s ease;
+ }
+ .user-card { transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease, border-color .25s ease, opacity .55s cubic-bezier(.22,1,.36,1); }
+}
+
+/* 入力欄：フォーカスでふちが光る */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {
+ transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visible, select:focus-visible, textarea:focus-visible {
+ box-shadow: 0 0 0 4px color-mix(in srgb, var(--ui-green) 22%, transparent) !important;
+}
+
+/* 数字が変わったときに軽く弾む（JM計算の合計点など） */
+.heiko-bump { animation: heiko-bump .45s cubic-bezier(.34,1.56,.64,1); }
+@keyframes heiko-bump { 40% { transform: scale(1.12); } }
+
+/* 通知のバッジ（未読数）：数が出たときにポンと出る */
+.unread-badge { animation: heiko-pop .4s cubic-bezier(.34,1.56,.64,1); }
+@keyframes heiko-pop { from { transform: scale(.4); opacity: 0; } }
+
+/* チャットの吹き出し・AIの回答：下からふわっと */
+.message-bubble, .ai-bubble { animation: heiko-bubble-in .35s cubic-bezier(.22,1,.36,1) both; }
+@keyframes heiko-bubble-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+/* 学校行事カレンダー：日付のマスが順に現れる・選んだ日が弾む */
+.ev-grid .ev-day { animation: heiko-cell-in .4s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(var(--cell, 0) * 12ms); }
+@keyframes heiko-cell-in { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+.ev-day.is-selected { animation: heiko-bump .4s cubic-bezier(.34,1.56,.64,1); }
+
+@media (prefers-reduced-motion: reduce) {
+ ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+ html.heiko-motion .heiko-reveal { opacity: 1; transform: none; transition: none; }
+ .heiko-ripple, .heiko-bump, .unread-badge, .message-bubble, .ai-bubble, .ev-grid .ev-day, .ev-day.is-selected, .nav-links.open > * { animation: none !important; }
+ .heiko-press:active:not(:disabled) { transform: none; }
+ .navbar .nav-links > .nav-item::after { transition: none; }
+}

@@ -9,8 +9,8 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#254f3d">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="stylesheet" href="theme.css?v=20261124wide">
-    <script src="ui.js?v=20261125login"></script>
+    <link rel="stylesheet" href="theme.css?v=20261125motion">
+    <script src="ui.js?v=20261125motion"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
     <style>
@@ -221,7 +221,7 @@
                 const more = events.length > 3 ? `<span class="ev-more">ほか${events.length - 3}件</span>` : "";
                 const dots = events.length ? `<span class="ev-dots">${events.slice(0, 4).map(event => `<i class="type-${event.type}"></i>`).join("")}</span>` : "";
                 const label = `${SE.formatDay(key)}${events.length ? `、行事${events.length}件` : ""}`;
-                html += `<button type="button" class="${classes}" data-key="${key}" aria-label="${escapeHtml(label)}" aria-pressed="${key === selectedKey}"><span class="ev-date">${date.getDate()}</span>${chips}${more}${dots}</button>`;
+                html += `<button type="button" class="${classes}" style="--cell:${i}" data-key="${key}" aria-label="${escapeHtml(label)}" aria-pressed="${key === selectedKey}"><span class="ev-date">${date.getDate()}</span>${chips}${more}${dots}</button>`;
             }
             grid.innerHTML = html;
         }

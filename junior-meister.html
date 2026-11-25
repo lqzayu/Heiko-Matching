@@ -1262,8 +1262,8 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="theme.css?v=20261124wide">
-    <script src="ui.js?v=20261125login"></script>
+    <link rel="stylesheet" href="theme.css?v=20261125motion">
+    <script src="ui.js?v=20261125motion"></script>
     <script src="online.js?v=20260917b" defer></script>
     <style>
         /* ジュニアマイスター計算ページ専用 */
@@ -2074,7 +2074,7 @@
 
         function render() {
             const { rows, total, base, top8, hasSA } = evaluate();
-            $("jm-total").textContent = total;
+            if (typeof heikoCountUp === "function") heikoCountUp($("jm-total"), total); else $("jm-total").textContent = total;
             const eligible = base >= 20;
             const levelEl = $("jm-level");
             let level = "", cls = "";
