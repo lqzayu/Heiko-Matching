@@ -9,8 +9,8 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#254f3d">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="stylesheet" href="theme.css?v=20261125motion">
-    <script src="ui.js?v=20261125motion"></script>
+    <link rel="stylesheet" href="theme.css?v=20261125tabbar2">
+    <script src="ui.js?v=20261125tabbar"></script>
     <script src="online.js?v=20260917b" defer></script>
     <!-- 数式の表示（KaTeX）。AIの回答の $F = ma$ のような式をきれいに表示する -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" crossorigin="anonymous">
@@ -31,6 +31,10 @@
         .ai-field.full { grid-column:1 / -1; }
         .ai-field label { color:var(--ui-muted); font-size:12px; font-weight:700; }
         .ai-field input, .ai-field select { width:100%; min-height:44px; padding:9px 11px; }
+        .ai-subject-other { margin-top:6px; animation:ai-subject-in .25s cubic-bezier(.22,1,.36,1); }
+        .ai-subject-other[hidden] { display:none; }
+        @keyframes ai-subject-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+        @media (prefers-reduced-motion: reduce) { .ai-subject-other { animation:none; } }
         .ai-chat-card { overflow:hidden; }
         .ai-chat-header { padding:22px 24px; border-bottom:1px solid var(--ui-line); display:flex; justify-content:space-between; gap:16px; align-items:center; }
         .ai-chat-header h2 { margin:0; }
@@ -41,6 +45,9 @@
         .ai-bubble.user { align-self:flex-end; color:#fff; background:var(--ui-green); border-bottom-right-radius:5px; }
         .ai-bubble.model { align-self:flex-start; color:var(--ui-ink); background:var(--ui-paper); border:1px solid var(--ui-line); border-bottom-left-radius:5px; }
         .ai-bubble.loading { color:var(--ui-muted); font-size:13px; }
+        /* 日付が変わって新しい相談になったときの区切り線 */
+        .ai-day-divider { display:flex; align-items:center; gap:10px; color:var(--ui-muted); font-size:12px; font-weight:700; letter-spacing:.02em; margin:6px 0; }
+        .ai-day-divider::before, .ai-day-divider::after { content:""; flex:1; height:1px; background:var(--ui-line, rgba(0,0,0,.12)); }
         /* AIの回答（見出し・箇条書き・数式） */
         .ai-bubble.rich { white-space:normal; }
         .ai-answer > :first-child { margin-top:0; }
@@ -77,7 +84,7 @@
         @media (min-width:900px) {
             .ai-page { max-width:1320px; display:grid; grid-template-columns:minmax(300px, 380px) minmax(0, 1fr); column-gap:24px; align-items:start; }
             .ai-page > .page-heading { grid-column:1 / -1; }
-            .ai-page > .ai-hero { grid-column:1; display:block; margin:0; position:sticky; top:96px; }
+            .ai-page > .ai-hero { grid-column:1; display:block; margin:0; position:sticky; top:24px; }
             .ai-page > .ai-chat-card { grid-column:2; display:flex; flex-direction:column; min-height:calc(100vh - 190px); }
             .ai-page .ai-form-grid { grid-template-columns:1fr; }
             .ai-page .ai-field.full { grid-column:auto; }
@@ -104,7 +111,7 @@
         </button>
         <nav class="nav-links" id="nav-links">
             <a class="nav-item" href="main.html?guide=1">使い方</a>
-            <a class="nav-item" href="https://docs.google.com/forms/d/e/1FAIpQLSft5k1kroOLIzgbv5YArbYzkpBQfPG4CWsJsqjOE9YvUSK3gA/viewform?usp=header">意見箱</a>
+            <a class="nav-item nav-external" href="https://docs.google.com/forms/d/e/1FAIpQLSft5k1kroOLIzgbv5YArbYzkpBQfPG4CWsJsqjOE9YvUSK3gA/viewform?usp=header" target="_blank" rel="noopener">意見箱<span class="sr-only">（Googleフォームが新しいタブで開きます）</span></a>
             <a class="nav-item" href="main.html?tab=recruit">募集投稿</a>
             <a class="nav-item" href="main.html?tab=search">ユーザーを探す</a>
             <a class="nav-item" href="messages.html">メッセージ</a>
@@ -144,6 +151,7 @@
                             <option value="未指定">まだ決まっていない</option>
                             <option>数学</option><option>英語</option><option>国語</option><option>理科</option><option>社会</option><option>専門科目</option><option>その他</option>
                         </select>
+                        <input id="ai-subject-other" class="ai-subject-other" maxlength="30" placeholder="教科の名前（例：電気回路、簿記）" aria-label="教科の名前" autocomplete="off" hidden>
                     </div>
                     <div class="ai-field">
                         <label for="ai-minutes">1日に勉強できる時間</label>
@@ -202,6 +210,7 @@
         let waiting = false;
         let consultationCompleted = false;
         let pendingRequest = null;
+        let stateDateKey = "";
         let aiComposing = false;
         let aiEnterArmed = false;
 
@@ -213,9 +222,24 @@
             return new Date().toLocaleDateString("sv-SE");
         }
 
+        // 教科で「その他」を選んだときは、入力欄の教科名を使う
+        function currentSubject() {
+            const selected = document.getElementById("ai-subject").value;
+            if (selected !== "その他") return selected;
+            return document.getElementById("ai-subject-other").value.trim() || "その他";
+        }
+        function updateSubjectOther() {
+            const other = document.getElementById("ai-subject-other");
+            const show = document.getElementById("ai-subject").value === "その他";
+            const wasHidden = other.hidden;
+            other.hidden = !show;
+            other.required = show;
+            if (show && wasHidden && document.activeElement === document.getElementById("ai-subject")) other.focus();
+        }
+
         function getProfile() {
             return {
-                subject: document.getElementById("ai-subject").value,
+                subject: currentSubject(),
                 goal: document.getElementById("ai-goal").value.trim(),
                 challenge: document.getElementById("ai-challenge").value.trim(),
                 minutes: document.getElementById("ai-minutes").value,
@@ -230,12 +254,17 @@
             { id: "ai-goal", label: "達成したいこと" },
             { id: "ai-challenge", label: "困っていること" }
         ];
+        const SUBJECT_OTHER_FIELD = { id: "ai-subject-other", label: "教科の名前" };
         function missingProfileFields() {
-            return REQUIRED_PROFILE_FIELDS.filter(field => !document.getElementById(field.id).value.trim());
+            const missing = REQUIRED_PROFILE_FIELDS.filter(field => !document.getElementById(field.id).value.trim());
+            if (document.getElementById("ai-subject").value === "その他" && !document.getElementById("ai-subject-other").value.trim()) {
+                missing.splice(1, 0, SUBJECT_OTHER_FIELD);
+            }
+            return missing;
         }
         function updateAiReadiness() {
             const missing = missingProfileFields();
-            REQUIRED_PROFILE_FIELDS.forEach(field => {
+            [...REQUIRED_PROFILE_FIELDS, SUBJECT_OTHER_FIELD].forEach(field => {
                 const el = document.getElementById(field.id);
                 el.setAttribute("aria-invalid", String(missing.includes(field) && el.dataset.touched === "1"));
             });
@@ -254,7 +283,13 @@
 
         function setProfile(profile) {
             if (!profile) return;
-            if (profile.subject) document.getElementById("ai-subject").value = profile.subject;
+            if (profile.subject) {
+                const select = document.getElementById("ai-subject");
+                const known = [...select.options].some(option => option.value === profile.subject);
+                select.value = known ? profile.subject : "その他";
+                document.getElementById("ai-subject-other").value = known ? "" : profile.subject;
+                updateSubjectOther();
+            }
             if (profile.goal) document.getElementById("ai-goal").value = profile.goal;
             if (profile.challenge) document.getElementById("ai-challenge").value = profile.challenge;
             if (profile.minutes) document.getElementById("ai-minutes").value = profile.minutes;
@@ -265,7 +300,7 @@
             if (!currentUserId) return;
             try {
                 localStorage.setItem(stateKey, JSON.stringify({
-                    dateKey: currentDateKey(),
+                    dateKey: stateDateKey || currentDateKey(),
                     sessionId,
                     history,
                     conversation,
@@ -365,6 +400,48 @@
                 if (content) content.innerHTML = renderAiAnswer(bubble.dataset.raw || "");
             });
         };
+
+        function addDayDivider(text) {
+            const empty = document.getElementById("ai-empty");
+            if (empty) empty.remove();
+            const divider = document.createElement("div");
+            divider.className = "ai-day-divider";
+            divider.setAttribute("role", "separator");
+            divider.textContent = text;
+            const messages = document.getElementById("ai-messages");
+            messages.appendChild(divider);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function dayDividerLabel(dateKey) {
+            const parts = String(dateKey || "").split("-");
+            return parts.length === 3 ? `${Number(parts[1])}月${Number(parts[2])}日 新しい相談` : "新しい相談";
+        }
+
+        // 日付が変わったら、これまでのやり取りは画面に残したまま新しい相談（その日の2通）を始められるようにする。
+        // 前日に回答を受け取れなかった送信は、勝手に送り直さない
+        function startNewDay() {
+            const today = currentDateKey();
+            if (stateDateKey === today) return false;
+            const hadConversation = conversation.length > 0;
+            stateDateKey = today;
+            sessionId = createId();
+            consultationCompleted = false;
+            pendingRequest = null;
+            const input = document.getElementById("ai-input");
+            input.disabled = false;
+            input.placeholder = "AIに相談する内容を入力…";
+            document.getElementById("ai-send").textContent = "相談する";
+            document.getElementById("ai-status").textContent = "";
+            if (hadConversation) {
+                const label = dayDividerLabel(today);
+                conversation.push({ type: "divider", text: label });
+                addDayDivider(label);
+            }
+            saveState();
+            updateAiReadiness();
+            return true;
+        }
 
         function addBubble(text, type, responseId) {
             const empty = document.getElementById("ai-empty");
@@ -470,7 +547,9 @@
 
                 loading.remove();
                 if (!result || result.status !== "success" || !result.message || !result.message.reply) {
-                    throw new Error(result && result.message ? String(result.message) : "回答を取得できませんでした");
+                    const failure = new Error(result && result.message && typeof result.message === "string" ? result.message : "回答を取得できませんでした");
+                    failure.serverRejected = !!result && result.status === "error";
+                    throw failure;
                 }
 
                 pendingRequest = null;
@@ -488,6 +567,24 @@
                 }
             } catch (error) {
                 loading.remove();
+                if (error.serverRejected && pendingRequest === request) {
+                    // 送った内容は入力欄に戻し、自分で送り直せるようにする（自動では送らない）
+                    pendingRequest = null;
+                    const last = conversation[conversation.length - 1];
+                    if (last && last.type === "user" && last.text === request.message) conversation.pop();
+                    const lastHistory = history[history.length - 1];
+                    if (lastHistory && lastHistory.role === "user" && lastHistory.text === request.message) history.pop();
+                    const bubbles = document.querySelectorAll("#ai-messages .ai-bubble.user");
+                    const lastBubble = bubbles[bubbles.length - 1];
+                    if (lastBubble && lastBubble.textContent === request.message) lastBubble.remove();
+                    const input = document.getElementById("ai-input");
+                    if (!input.value.trim()) input.value = request.message;
+                    saveState();
+                    document.getElementById("ai-send").textContent = "相談する";
+                    status.textContent = "送れなかった内容を入力欄に戻しました";
+                    showNotice(error.message || "AIとの通信に失敗しました", "error");
+                    return;
+                }
                 saveState();
                 document.getElementById("ai-send").textContent = "回答を再取得";
                 showNotice(error.name === "AbortError" ? "通信に時間がかかっています。回答を再取得してください" : (error.message || "AIとの通信に失敗しました"), "error");
@@ -499,6 +596,7 @@
         }
 
         async function sendStudyMessage() {
+            if (!waiting) startNewDay();
             if (waiting || consultationCompleted) return;
             if (!currentUserId) {
                 showNotice("ログインしてから利用してください", "error");
@@ -608,10 +706,7 @@
             try {
                 const saved = JSON.parse(localStorage.getItem(stateKey) || "null");
                 if (!saved) return;
-                if (saved.dateKey !== currentDateKey()) {
-                    localStorage.removeItem(stateKey);
-                    return;
-                }
+                stateDateKey = saved.dateKey || "";
                 if (saved.sessionId) sessionId = saved.sessionId;
                 setProfile(saved.profile);
                 if (Array.isArray(saved.history)) history.push(...saved.history);
@@ -619,15 +714,22 @@
                     saved.conversation.forEach(item => {
                         if (!item || !item.text) return;
                         conversation.push(item);
-                        addBubble(item.text, item.type === "model" ? "model" : "user", item.responseId || "");
+                        if (item.type === "divider") addDayDivider(item.text);
+                        else addBubble(item.text, item.type === "model" ? "model" : "user", item.responseId || "");
                     });
                 }
                 consultationCompleted = saved.consultationCompleted === true;
                 pendingRequest = saved.pendingRequest || null;
+                if (stateDateKey !== currentDateKey()) {
+                    // 前日以前の相談：履歴はそのまま、今日の新しい相談を始められるようにする
+                    startNewDay();
+                    return;
+                }
                 if (consultationCompleted) lockCompletedConsultation();
                 if (pendingRequest && !consultationCompleted) {
+                    // ページを開き直しただけで同じ内容を送り直さない。必要なら自分でボタンを押して再取得する
                     document.getElementById("ai-send").textContent = "回答を再取得";
-                    setTimeout(() => requestAi(pendingRequest), 400);
+                    document.getElementById("ai-status").textContent = "前回の回答を受け取れていません。「回答を再取得」で確認できます";
                 }
             } catch (error) {
                 localStorage.removeItem(stateKey);
@@ -640,11 +742,22 @@
             window.location.replace("index.html");
         } else {
             restoreState();
-            REQUIRED_PROFILE_FIELDS.forEach(field => {
+            [...REQUIRED_PROFILE_FIELDS, SUBJECT_OTHER_FIELD].forEach(field => {
                 const el = document.getElementById(field.id);
-                ["input", "change"].forEach(type => el.addEventListener(type, () => { el.dataset.touched = "1"; updateAiReadiness(); saveState(); }));
+                ["input", "change"].forEach(type => el.addEventListener(type, () => {
+                    el.dataset.touched = "1";
+                    if (field.id === "ai-subject") updateSubjectOther();
+                    updateAiReadiness();
+                    saveState();
+                }));
             });
+            updateSubjectOther();
+            if (!stateDateKey) stateDateKey = currentDateKey();
             updateAiReadiness();
+            // ページを開いたまま日付が変わった場合も、戻ってきたときに新しい相談へ切り替える
+            document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === "visible" && !waiting) startNewDay();
+            });
         }
     </script>
 </body>

@@ -1081,6 +1081,101 @@ function installHeikoHeaderShadow() {
     window.addEventListener("scroll", update, { passive: true });
 }
 
+// ===== 画面左のサイドメニュー：各項目にアイコンを付け、よく使う順に並べる =====
+const HEIKO_NAV_ICON_PATHS = {
+    home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
+    recruit: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/>',
+    messages: '<path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.5-5.6A8.5 8.5 0 1 1 21 12Z"/>',
+    events: '<rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
+    ai: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/>',
+    jm: '<circle cx="12" cy="9" r="6"/><path d="M8.5 13.8 7 22l5-3 5 3-1.5-8.2"/>',
+    profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    admin: '<path d="M12 3 4 6v5c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6Z"/><path d="m9 12 2 2 4-4"/>',
+    guide: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.7"/><path d="M12 17h.01"/>',
+    feedback: '<path d="M4 5h16v11H8l-4 4Z"/><path d="M8 9.5h8M8 12.5h5"/>',
+    logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/>',
+    refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'
+};
+// 並び順：上がよく使うページ、下（区切りのあと）が補助的な項目
+const HEIKO_NAV_ORDER = { home: 1, recruit: 2, messages: 3, events: 4, ai: 5, jm: 6, profile: 7, admin: 8, guide: 20, feedback: 21, logout: 22 };
+
+function heikoNavKey(item) {
+    const href = item.getAttribute("href") || "";
+    if (item.classList.contains("btn-logout")) return "logout";
+    if (item.classList.contains("nav-guide-button") || /guide=1/.test(href)) return "guide";
+    if (item.classList.contains("nav-external") || href.includes("docs.google.com/forms")) return "feedback";
+    if (item.id === "nav-admin-btn" || href.startsWith("admin.html")) return "admin";
+    if (item.id === "nav-recruit-link" || href.includes("tab=recruit")) return "recruit";
+    if (href.startsWith("main.html") || href === "index.html") return "home";
+    if (href.startsWith("messages.html")) return "messages";
+    if (href.startsWith("events.html")) return "events";
+    if (href.startsWith("ai-study.html")) return "ai";
+    if (href.startsWith("junior-meister.html")) return "jm";
+    if (href.startsWith("profile.html")) return "profile";
+    return "";
+}
+
+function heikoNavIcon(key) {
+    return `<span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${HEIKO_NAV_ICON_PATHS[key]}</svg></span>`;
+}
+
+function installHeikoSideNav() {
+    const navbar = document.querySelector(".navbar");
+    const links = navbar && navbar.querySelector(".nav-links");
+    if (!links || links.dataset.sideNav === "1") return;
+    links.dataset.sideNav = "1";
+    document.documentElement.classList.add("heiko-side-nav");
+    const page = (location.pathname.split("/").pop() || "main.html").toLowerCase();
+
+    links.querySelectorAll(":scope > .nav-item, :scope > .btn-logout").forEach(item => {
+        const key = heikoNavKey(item);
+        if (!key) return;
+        item.dataset.navKey = key;
+        item.style.order = String(HEIKO_NAV_ORDER[key] || 10);
+        // 文字だけを .nav-label で包む（未読バッジや読み上げ用の文字はそのまま）
+        const label = document.createElement("span");
+        label.className = "nav-label";
+        [...item.childNodes].forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                label.textContent += node.textContent.trim();
+                node.remove();
+            }
+        });
+        if (!label.textContent) return;
+        if (!item.title) item.title = label.textContent;
+        item.insertAdjacentHTML("afterbegin", heikoNavIcon(key));
+        item.querySelector(".nav-icon").after(label);
+        // ほかのページでは、いま開いているページの項目を強調する
+        if (!links.querySelector(".nav-item.active") && key !== "home" && key !== "recruit") {
+            const href = (item.getAttribute("href") || "").split("?")[0].toLowerCase();
+            if (href && href === page) { item.classList.add("active"); item.setAttribute("aria-current", "page"); }
+        }
+    });
+
+    // 使い方・意見箱・管理者・ログアウトは別のまとまりにする
+    // （横長：サイドメニューの一番下、縦長：上のヘッダー右側の小さなアイコン）
+    let secondary = navbar.querySelector(".nav-secondary");
+    if (!secondary) {
+        secondary = document.createElement("div");
+        secondary.className = "nav-secondary";
+        secondary.setAttribute("role", "group");
+        secondary.setAttribute("aria-label", "その他のメニュー");
+        navbar.appendChild(secondary);
+    }
+    ["admin", "guide", "feedback", "logout"].forEach(key => {
+        const item = links.querySelector(`:scope > [data-nav-key="${key}"]`);
+        if (item) { item.style.order = ""; secondary.appendChild(item); }
+    });
+
+    // 「更新」ボタン（ヘッダーに置かれている場合）もサイドメニューの見た目にそろえる
+    const refresh = navbar.querySelector(".heiko-header-actions .heiko-page-refresh");
+    if (refresh && !refresh.querySelector(".nav-icon")) {
+        refresh.classList.add("is-side-nav");
+        refresh.innerHTML = heikoNavIcon("refresh") + '<span class="nav-label">更新</span>';
+        refresh.title = "ページを更新";
+    }
+}
+
 // 数字をなめらかに増減させる（JM計算の合計点など）
 function heikoCountUp(el, to, duration = 600) {
     if (!el) return;
@@ -1223,6 +1318,7 @@ document.addEventListener("DOMContentLoaded", () => {
     installPageHelp();
     installPageRefreshButton();
     installRecruitmentPostButton();
+    installHeikoSideNav();
     installHeikoPwaSupport();
     installHeikoFooterNavigation();
     if (document.body && document.body.dataset.page === "main") {
