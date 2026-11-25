@@ -1321,3 +1321,36 @@ body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .bt
 /* ハンバーガーボタンは廃止（ページや ui.js 側の指定より強くして確実に隠す） */
 html body .navbar > button.hamburger-btn.hamburger-btn,
 html body .navbar .hamburger-btn { display:none!important; }
+
+
+/* ===== 背景を水色に固定（ライトモード） =====
+   以前は「端末がダークモードで、サイトをライトモードにしたとき」だけ水色になり、
+   それ以外（Windows の通常設定など）は薄い緑がかった色になっていた。ライトモードでは常に水色にする */
+html[data-theme="light"] body,
+html:not([data-theme]) body,
+html[data-theme="system"] body,
+html[data-theme="auto"] body {
+ background-color:#daf1f5!important;
+ background-image:radial-gradient(circle at 10% 20%, #eefcfd 0%, #daf1f5 90%)!important;
+ background-size:auto!important; background-position:0 0!important; background-attachment:fixed!important;
+}
+@media (prefers-color-scheme: dark) {
+ html:not([data-theme="light"]) body {
+  background-color:var(--ui-bg)!important;
+  background-image:radial-gradient(circle at 8% 0%,rgba(125,211,252,.18),transparent 30rem),radial-gradient(circle at 96% 12%,rgba(196,181,253,.13),transparent 26rem)!important;
+ }
+}
+html[data-theme="dark"] body {
+ background-color:var(--ui-bg)!important;
+ background-image:radial-gradient(circle at 8% 0%,rgba(125,211,252,.18),transparent 30rem),radial-gradient(circle at 96% 12%,rgba(196,181,253,.13),transparent 26rem)!important;
+}
+
+/* ===== フォントを Mac に寄せて全端末で共通にする =====
+   英数字は Avenir Next に近い Figtree、日本語はヒラギノに近い Noto Sans JP（どちらも Google Fonts から読み込む）。
+   コード・数式（KaTeX）は専用のフォントのまま */
+:root { --heiko-font:"Figtree","Noto Sans JP","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Meiryo",sans-serif,"Apple Color Emoji","Segoe UI Emoji"; }
+html body,
+html body :not(code, pre, kbd, samp, .katex, .katex *, svg, svg *) {
+ font-family:var(--heiko-font)!important;
+}
+html body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility; font-feature-settings:"palt" 0; }
