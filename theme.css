@@ -1354,3 +1354,194 @@ html body :not(code, pre, kbd, samp, .katex, .katex *, svg, svg *) {
  font-family:var(--heiko-font)!important;
 }
 html body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility; font-feature-settings:"palt" 0; }
+
+
+/* ===== ログイン・新規登録：広い画面では「紹介」と「フォーム」の2列 =====
+   横いっぱいに広げすぎず、最大1240pxに収める。フォームは読みやすい幅（最大460px）のまま */
+.login-hero { display:none; }
+@media (min-width:960px) {
+ [data-page="index"] .login-container {
+  display:grid!important; grid-template-columns:minmax(0,1.15fr) minmax(400px,460px)!important;
+  gap:clamp(36px,5vw,80px)!important; align-items:stretch!important;
+  width:min(1240px, calc(100% - 64px))!important; max-width:none!important;
+  min-height:calc(100dvh - 150px); margin:0 auto!important; padding:40px 0!important;
+ }
+ [data-page="index"] .login-container::before { content:none!important; display:none!important; }
+ [data-page="index"] .login-card { align-self:center; }
+ .login-hero {
+  display:flex; flex-direction:column; justify-content:center; gap:22px; position:relative; overflow:hidden;
+  padding:clamp(36px,4vw,56px); border-radius:28px; color:#fff;
+  background:linear-gradient(150deg,#1f4a3a 0%,#2b6650 55%,#3c8a6c 100%);
+  box-shadow:0 24px 60px rgba(31,74,58,.22);
+ }
+ .login-hero::before, .login-hero::after {
+  content:""; position:absolute; border-radius:50%; pointer-events:none;
+ }
+ .login-hero::before { width:420px; height:420px; right:-140px; top:-160px; background:radial-gradient(circle, rgba(216,239,153,.35), transparent 65%); }
+ .login-hero::after { width:320px; height:320px; left:-120px; bottom:-140px; background:radial-gradient(circle, rgba(125,211,252,.28), transparent 65%); }
+ .login-hero > * { position:relative; margin:0; }
+ .login-hero-kicker { font-size:12px; font-weight:800; letter-spacing:.24em; color:#d8ef99; }
+ .login-hero-title { font-size:clamp(34px,3.6vw,52px); line-height:1.3; font-weight:800; letter-spacing:-.03em; color:#fff!important; }
+ .login-hero-lead { font-size:15px; line-height:1.9; color:rgba(255,255,255,.86); max-width:34em; }
+ .login-hero-features { list-style:none; padding:0; margin:10px 0 0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+ .login-hero-features li {
+  display:flex; gap:12px; align-items:flex-start; padding:16px; border-radius:16px;
+  background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+ }
+ .login-hero-features strong { display:block; font-size:14px; font-weight:800; margin-bottom:3px; }
+ .login-hero-features span:not(.login-hero-icon) { display:block; font-size:12px; line-height:1.6; color:rgba(255,255,255,.78); }
+ .login-hero-icon { flex:0 0 36px; width:36px; height:36px; display:grid; place-items:center; border-radius:11px; background:rgba(216,239,153,.18); color:#d8ef99; }
+ .login-hero-icon svg { width:20px; height:20px; }
+ html[data-theme="dark"] .login-hero { background:linear-gradient(150deg,#16213a 0%,#1e3152 55%,#29415f 100%); box-shadow:0 24px 60px rgba(0,0,0,.35); }
+}
+@media (min-width:960px) and (prefers-color-scheme:dark) {
+ html:not([data-theme="light"]) .login-hero { background:linear-gradient(150deg,#16213a 0%,#1e3152 55%,#29415f 100%); box-shadow:0 24px 60px rgba(0,0,0,.35); }
+}
+/* 少し狭い（960〜1179px）ときは、機能の紹介を1列にして詰まりすぎないようにする */
+@media (min-width:960px) and (max-width:1179px) {
+ .login-hero-features { grid-template-columns:1fr; }
+ .login-hero-features li:nth-child(n+4) { display:none; }
+}
+/* 960px未満：これまでどおり、上に短いキャッチコピー＋フォームの1列 */
+@media (min-width:769px) and (max-width:959px) {
+ [data-page="index"] .login-container { display:block!important; max-width:520px!important; margin:0 auto!important; padding:48px 24px!important; }
+ [data-page="index"] .login-container::before { display:block; content:"学ぶ時間に、仲間がいる。"; font-size:26px; margin:0 0 24px; }
+}
+
+/* ===== マイページ：広い画面では「基本情報」と「そのほかの設定」の2列 ===== */
+.profile-account-section h3 { margin:0 0 4px; font-size:15px; font-weight:800; color:var(--ui-ink); }
+.profile-danger { margin-top:18px; text-align:center; }
+@media (min-width:1000px) {
+ [data-page="profile"] .container { max-width:1120px!important; width:100%!important; padding:0 32px!important; margin:36px auto 56px!important; }
+ [data-page="profile"] .profile-card {
+  background:none!important; border:0!important; box-shadow:none!important; padding:0!important; text-align:left!important;
+  backdrop-filter:none!important; -webkit-backdrop-filter:none!important;
+ }
+ [data-page="profile"] .profile-card > h2 { font-size:26px!important; margin:0 0 22px!important; text-align:left; }
+ [data-page="profile"] .profile-layout { display:grid; grid-template-columns:minmax(340px,400px) minmax(0,1fr); gap:28px; align-items:start; }
+ /* 左：基本情報のカード（スクロールしても見えるように固定） */
+ [data-page="profile"] .profile-col-basic {
+  position:sticky; top:24px; padding:28px; border-radius:22px; text-align:center;
+  background:linear-gradient(135deg,var(--glass-surface-strong),var(--glass-surface)); border:1px solid var(--glass-border);
+  box-shadow:var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  backdrop-filter:blur(22px) saturate(1.25); -webkit-backdrop-filter:blur(22px) saturate(1.25);
+ }
+ [data-page="profile"] .profile-col-basic .form-group { text-align:left; }
+ [data-page="profile"] .profile-col-basic .profile-image-group { margin-bottom:22px; }
+ [data-page="profile"] .profile-col-basic .btn-large { width:100%; margin-top:6px; }
+ /* 右：設定のカードを2列のタイルに。外観とホーム画面追加は並べ、ほかは横いっぱい */
+ [data-page="profile"] .profile-col-settings { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; align-items:stretch; }
+ [data-page="profile"] .profile-col-settings > * { margin:0!important; min-width:0; }
+ [data-page="profile"] .profile-col-settings > .appearance-settings,
+ [data-page="profile"] .profile-col-settings > .heiko-pwa-install-card { display:flex; flex-direction:column; justify-content:space-between; gap:10px; }
+ [data-page="profile"] .profile-col-settings > :is(.profile-account-section, #blocked-users-panel, .profile-danger) { grid-column:1 / -1; }
+ [data-page="profile"] .profile-col-settings > :is(.profile-account-section, #blocked-users-panel) {
+  padding:24px!important; border-radius:18px; border:1px solid var(--ui-line)!important; border-top:1px solid var(--ui-line)!important;
+  background:linear-gradient(135deg,var(--glass-surface-strong),var(--glass-surface));
+ }
+ [data-page="profile"] .profile-account-actions { display:grid!important; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start!important; gap:12px!important; margin:12px 0 0!important; }
+ [data-page="profile"] .profile-account-actions > :is(#line-link-status, #line-link-result) { grid-column:1 / -1; }
+ [data-page="profile"] .profile-account-actions > button { width:100%; min-height:46px; margin:0!important; }
+ [data-page="profile"] .profile-danger { text-align:right; margin-top:-4px!important; }
+ [data-page="profile"] .profile-danger .btn-delete-account { margin:0!important; }
+}
+/* 縦長の画面（上にヘッダーが残る）では、固定位置をヘッダーの下にずらす */
+@media (min-width:1000px) and (max-aspect-ratio:1/1) {
+ [data-page="profile"] .profile-col-basic { top:76px; }
+}
+/* サイドメニューの「更新」も、ほかの項目と同じく左揃え */
+@media (min-width:1200px) and (min-aspect-ratio:1/1) {
+ body:has(> .navbar) .navbar .heiko-page-refresh.is-side-nav { justify-content:flex-start!important; }
+}
+/* マイページ右側：見出しの大きさをそろえ、顔認証のボタンもボタンらしい見た目にする */
+@media (min-width:1000px) {
+ [data-page="profile"] .profile-col-settings h3 { font-size:15px!important; font-weight:800!important; margin:0 0 6px!important; }
+ [data-page="profile"] .profile-account-actions .btn-update-face {
+  text-decoration:none!important; font-size:14px!important; font-weight:700!important; padding:12px 16px!important;
+  border:1px solid var(--ui-line)!important; border-radius:10px!important;
+ }
+}
+
+
+/* ===== ログインカード：横に広い2列（左：顔認証／右：ID・パスワード） ===== */
+.login-card-head { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap-reverse; }
+.login-card-head h1 { margin:0!important; }
+.login-card-head .login-theme-switch { margin:0 0 0 auto!important; }
+.login-face-visual, .login-face-caption, .login-divider { display:none; }
+.login-body { margin-top:24px; }
+
+@media (min-width:960px) {
+ /* カードを広くし、紹介パネルはその分だけ細くする */
+ [data-page="index"] .login-container { grid-template-columns:minmax(380px,1fr) minmax(640px,700px)!important; }
+ [data-page="index"] .login-card { padding:36px 40px 32px!important; }
+ .login-hero-features { grid-template-columns:1fr!important; gap:10px!important; }
+ .login-hero-features li { padding:13px 15px!important; }
+
+ .login-body { display:grid; grid-template-columns:minmax(0,.85fr) auto minmax(0,1.15fr); gap:0 28px; align-items:stretch; margin-top:26px; }
+ .login-face-col {
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center;
+  padding:26px 20px; border-radius:20px; background:var(--ui-soft); border:1px solid var(--ui-line);
+ }
+ .login-face-visual {
+  display:grid; place-items:center; width:92px; height:92px; border-radius:28px;
+  background:var(--ui-paper); color:var(--ui-green); box-shadow:0 10px 24px rgba(36,60,50,.10);
+ }
+ .login-face-visual svg { width:52px; height:52px; }
+ .login-face-caption { display:block; margin:0; font-size:12.5px; line-height:1.7; color:var(--ui-muted); }
+ .login-face-col #face-auth-section { margin:0!important; width:100%; }
+ .login-face-col #face-login-btn, .login-face-col #face-register-btn { width:100%; min-height:48px; margin:0!important; font-weight:800; }
+ .login-face-col #auth-status:empty { display:none; }
+ .login-face-col #camera-container { width:100%; margin:0!important; }
+ /* カメラが動いている間は、説明の絵を隠して映像を見せる */
+ .login-face-col:has(#camera-container[style*="block"]) :is(.login-face-visual, .login-face-caption) { display:none; }
+
+ /* 2列の間の「または」 */
+ .login-divider { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--ui-muted); font-size:12px; font-weight:700; }
+ .login-divider::before, .login-divider::after { content:""; flex:1; width:1px; background:var(--ui-line); }
+
+ .login-form-col { display:flex; flex-direction:column; justify-content:center; min-width:0; }
+ .login-form-col .input-group > * { margin-top:0; }
+ .login-form-col .remember-login-row { justify-content:flex-start!important; margin:6px 0 12px!important; }
+ /* 下の2つのリンクは横並び */
+ .login-form-col #login-section { display:flex; flex-wrap:wrap; justify-content:center; column-gap:18px; }
+ .login-form-col #login-section[style*="none"] { display:none!important; }
+ .login-form-col #login-section > .remember-login-row, .login-form-col #login-section > .btn-submit-primary { flex:0 0 100%; }
+ .login-form-col #login-section > br { display:none; }
+ .login-form-col #login-section > .btn-flat { margin-top:12px!important; }
+
+ /* メール認証・パスワード再設定のときは顔認証の列を出さず、フォームだけを中央に */
+ .login-card:has(#verify-section[style*="block"], #forgot-password-section[style*="block"]) .login-body { grid-template-columns:minmax(0,520px); justify-content:center; }
+ .login-card:has(#verify-section[style*="block"], #forgot-password-section[style*="block"]) :is(.login-face-col, .login-divider) { display:none; }
+}
+/* 少し狭い画面（960〜1239px）：紹介パネルを隠し、横長のカードだけを中央に */
+@media (min-width:960px) and (max-width:1239px) {
+ [data-page="index"] .login-container { grid-template-columns:minmax(0,800px)!important; justify-content:center!important; }
+ .login-hero { display:none!important; }
+ [data-page="index"] .login-container::before { content:"学ぶ時間に、仲間がいる。"!important; display:block!important; font-size:26px; margin:0 0 4px; align-self:end; }
+}
+
+/* 調整：見出しを左、テーマ切り替えを右に。紹介パネルは細くなる分、文字と機能の紹介をコンパクトに */
+.login-card-head h1 { order:0; }
+.login-card-head .login-theme-switch { order:1; }
+@media (min-width:960px) {
+ .login-hero { gap:18px!important; padding:clamp(32px,3vw,44px)!important; }
+ .login-hero-title { font-size:clamp(30px,2.7vw,42px)!important; }
+ .login-hero-lead { font-size:14px!important; }
+ .login-hero-features { grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:8px!important; }
+ .login-hero-features li { align-items:center!important; padding:10px 12px!important; gap:10px!important; }
+ .login-hero-features li:nth-child(n) { display:flex!important; }
+ .login-hero-features span:not(.login-hero-icon) { display:none!important; }
+ .login-hero-features strong { margin:0!important; font-size:13px!important; }
+ .login-hero-icon { flex-basis:32px!important; width:32px!important; height:32px!important; }
+ .login-form-col #message:empty { display:none; }
+ /* 新規登録では、顔認証の列の説明は「撮影・登録」の案内（既存の文）に任せる */
+ .login-card:has(#register-section[style*="block"]) .login-face-caption { display:none; }
+}
+@media (min-width:960px) and (max-width:1239px) {
+ [data-page="index"] .login-container { align-content:center!important; row-gap:18px!important; }
+ [data-page="index"] .login-container::before { align-self:auto!important; margin:0!important; }
+}
+
+/* 顔認証の説明は列の幅に合わせて自然に折り返す */
+.login-face-caption br { display:none; }

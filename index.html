@@ -902,7 +902,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261125font">
+    <link rel="stylesheet" href="theme.css?v=20261125login3">
 
     <style>
         #remember-login:checked + .remember-login-checkmark {
@@ -912,13 +912,22 @@
             box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22) !important;
         }
 
+        /* チェックの印は文字（✓）ではなく線で描く。フォントによって位置がずれないよう、枠の中央に固定する */
+        .remember-login-checkmark { position: relative; font-size: 0 !important; }
+        .remember-login-checkmark::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 45%;
+            width: 5px;
+            height: 10px;
+            border: solid #ffffff;
+            border-width: 0 2.5px 2.5px 0;
+            transform: translate(-50%, -50%) rotate(45deg) scale(0);
+            transition: transform 180ms cubic-bezier(.34,1.56,.64,1);
+        }
         #remember-login:checked + .remember-login-checkmark::after {
-            content: "✓";
-            color: #ffffff !important;
-            font-size: 17px;
-            font-weight: 900;
-            line-height: 1;
-            transform: translateY(-1px);
+            transform: translate(-50%, -50%) rotate(45deg) scale(1);
         }
     </style>
     <script src="ui.js?v=20261125tabbar"></script>
@@ -933,8 +942,22 @@
 
     <div class="login-container">
 
+        <!-- 広い画面だけで表示する、サービスの紹介（狭い画面では隠して、フォームだけにする） -->
+        <aside class="login-hero" aria-labelledby="login-hero-title">
+            <p class="login-hero-kicker">HEIKO MATCHING</p>
+            <h2 class="login-hero-title" id="login-hero-title">学ぶ時間に、<br>仲間がいる。</h2>
+            <p class="login-hero-lead">平工生どうしで、いっしょに勉強する仲間を見つけよう。<br>気になる募集から、新しい会話をはじめられます。</p>
+            <ul class="login-hero-features">
+                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><div><strong>仲間を探す</strong><span>学年・学科・タグで、勉強仲間の募集を探せます</span></div></li>
+                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.4 7.5L3 21l1.5-5.6A8.5 8.5 0 1 1 21 12Z"/></svg></span><div><strong>メッセージ</strong><span>気になった人と、1対1でやり取りできます</span></div></li>
+                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8Z"/></svg></span><div><strong>AI学習相談・JM計算</strong><span>勉強方法の相談や、資格の点数計算もできます</span></div></li>
+                <li><span class="login-hero-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg></span><div><strong>学校行事</strong><span>これからの行事をカレンダーで確認できます</span></div></li>
+            </ul>
+        </aside>
+
         <div class="login-card">
 
+            <div class="login-card-head">
             <div class="login-theme-switch" role="group" aria-label="表示テーマを切り替える">
 
                 <button type="button" id="login-theme-light" onclick="setLoginTheme('light')" aria-pressed="false">
@@ -952,6 +975,18 @@
             </div>
 
             <h1 id="form-title">ログイン</h1>
+            </div>
+
+            <!-- 広い画面では、左：顔認証、右：ユーザID・パスワード の2列にする -->
+            <div class="login-body">
+            <div class="login-face-col">
+            <div class="login-face-visual" aria-hidden="true">
+                <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 15V10a4 4 0 0 1 4-4h5M33 6h5a4 4 0 0 1 4 4v5M42 33v5a4 4 0 0 1-4 4h-5M15 42h-5a4 4 0 0 1-4-4v-5"/>
+                    <path d="M18 19v3M30 19v3M24 21v7h-2M18.5 33c3 2.6 8 2.6 11 0"/>
+                </svg>
+            </div>
+            <p class="login-face-caption">ユーザIDを入力してから押すと、<br>カメラで顔を確認してログインします。</p>
 
 
             <div id="camera-container" class="camera-box">
@@ -974,6 +1009,9 @@
             </div>
 
 
+            </div>
+            <div class="login-divider" aria-hidden="true"><span>または</span></div>
+            <div class="login-form-col">
 			<form id="auth-form" autocomplete="on" novalidate onsubmit="handleAuthenticationSubmit(event)">
             <div class="input-group">
 
@@ -1083,6 +1121,8 @@
             </div>
 
 			</form>
+            </div>
+            </div>
         </div>
 
     </div>

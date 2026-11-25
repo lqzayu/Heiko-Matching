@@ -489,7 +489,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261125font">
+    <link rel="stylesheet" href="theme.css?v=20261125login3">
     <script src="ui.js?v=20261125tabbar"></script>
     <script src="face-camera.js?v=20261118lazy"></script>
     <script src="online.js?v=20260917b" defer></script>
@@ -527,6 +527,9 @@
         <div class="profile-card">
             <h2>プロフィール設定</h2>
 
+            <!-- 広い画面では、左：基本情報、右：そのほかの設定 の2列にする -->
+            <div class="profile-layout">
+            <section class="profile-col profile-col-basic" aria-label="基本情報">
             <div class="profile-image-group">
                 <img id="profile-icon" class="big-profile-icon"
                     src="avatar-default.svg" alt="プロフィール画像">
@@ -568,7 +571,9 @@
             </div>
 
             <button class="btn-large" onclick="saveProfile()">設定を保存する</button>
+            </section>
 
+            <div class="profile-col profile-col-settings">
             <section class="appearance-settings" aria-labelledby="appearance-settings-title">
                 <h3 id="appearance-settings-title">外観設定</h3>
                 <p>端末の設定に合わせるか、ライトモード・ダークモードを固定できます。</p>
@@ -579,6 +584,8 @@
                     <option value="dark">ダークモード</option>
                 </select>
             </section>
+            <section class="profile-account-section" aria-labelledby="profile-account-title">
+            <h3 id="profile-account-title">ログイン・通知の連携</h3>
             <div class="profile-account-actions">
             <button class="btn-update-face" type="button" onclick="startFaceUpdate()">顔認証情報をアップデートする</button>
             <button id="line-link-button" class="btn-large" type="button" onclick="createLineLinkCode()">LINE通知を連携する</button>
@@ -586,11 +593,16 @@
             <div id="line-link-status" style="margin-top:8px; color:#64748b; font-size:13px;" aria-live="polite">連携状態を確認中...</div>
             <div id="line-link-result" style="display:none; margin:12px 0 4px; padding:14px; border-radius:12px; background:rgba(28,189,197,.1); color:var(--ui-ink,#1e293b); line-height:1.7;"></div>
             </div>
-            <button class="btn-delete-account" type="button" onclick="deleteAccount()">ユーザー情報を削除する</button>
+            </section>
 
             <div id="blocked-users-panel" style="margin-top:28px; padding-top:20px; border-top:1px solid var(--ui-line, rgba(0,0,0,0.08)); text-align:left;">
                 <h3 style="margin:0 0 12px; color:var(--ui-ink, #1e293b);">ブロック中のユーザー</h3>
                 <div id="blocked-users-list" style="color:var(--ui-muted, #64748b); font-size:13px;" data-skeleton="lines" data-count="2"></div>
+            </div>
+            <div class="profile-danger">
+                <button class="btn-delete-account" type="button" onclick="deleteAccount()">ユーザー情報を削除する</button>
+            </div>
+            </div>
             </div>
         </div>
     </main>
