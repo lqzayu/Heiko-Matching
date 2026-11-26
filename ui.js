@@ -985,6 +985,100 @@ function installHeikoSharedStyles() {
     });
 })();
 
+// =====================================================================
+// ボタンを押したあとの「処理中」表示と二重クリック防止（全ページ共通）
+// ボタンを押した直後にサーバー（GAS）への通信が始まったら、その通信が終わるまで
+// ボタンに「保存中…」などを重ねて表示し、もう一度押せないようにする。
+// ページ側のボタンの文字や disabled はさわらない（上に重ねて表示するだけ）
+// =====================================================================
+(function () {
+    if (window.__heikoBusyInstalled) return;
+    window.__heikoBusyInstalled = true;
+    const CLICK_WINDOW_MS = 400;     // 押してからこの時間内に始まった通信を、そのボタンの処理とみなす
+    const SHOW_DELAY_MS = 120;       // すぐ終わる処理では表示がチラつかないよう、少し待ってから出す
+    const SKIP = ".hamburger-btn, .page-help-button, .heiko-tour button, .toggle-password-btn, .toggle-confirm-btn, .usage-guide-close, .chat-back-btn, [data-no-busy], .nav-links *, .nav-secondary *";
+    let lastButton = null, lastClickAt = 0;
+
+    function labelFor(button) {
+        if (button.dataset.busyLabel) return button.dataset.busyLabel;
+        const text = (button.textContent || button.value || "").replace(/\s+/g, "");
+        if (/ログイン/.test(text)) return "ログイン中…";
+        if (/保存|設定を|登録/.test(text)) return "保存中…";
+        if (/送信|投稿|相談|コード/.test(text)) return "送信中…";
+        if (/削除|解除|ブロック/.test(text)) return "処理中…";
+        if (/更新|読み込|再取得|同期|取得/.test(text)) return "読み込み中…";
+        return "処理中…";
+    }
+
+    function start(button) {
+        const count = Number(button.dataset.heikoBusyCount || 0) + 1;
+        button.dataset.heikoBusyCount = String(count);
+        if (count > 1) return;
+        button.setAttribute("aria-busy", "true");
+        button.classList.add("is-heiko-locked");
+        button._heikoBusyTimer = setTimeout(() => {
+            if (!button.dataset.heikoBusyCount) return;
+            const label = document.createElement("span");
+            label.className = "heiko-busy-label";
+            label.setAttribute("aria-hidden", "true");
+            label.innerHTML = '<span class="heiko-busy-spinner"></span><span></span>';
+            label.lastChild.textContent = labelFor(button);
+            button.appendChild(label);
+            button.classList.add("is-heiko-busy");
+        }, SHOW_DELAY_MS);
+    }
+
+    function end(button) {
+        const count = Number(button.dataset.heikoBusyCount || 0) - 1;
+        if (count > 0) { button.dataset.heikoBusyCount = String(count); return; }
+        delete button.dataset.heikoBusyCount;
+        clearTimeout(button._heikoBusyTimer);
+        button.removeAttribute("aria-busy");
+        button.classList.remove("is-heiko-locked", "is-heiko-busy");
+        button.querySelectorAll(":scope > .heiko-busy-label").forEach(el => el.remove());
+    }
+
+    function remember(button) {
+        if (!button || button.matches(SKIP)) return;
+        lastButton = button;
+        lastClickAt = performance.now();
+    }
+
+    // 処理中のボタンは押せないようにする（キャプチャ段階で止める）
+    document.addEventListener("click", event => {
+        const button = event.target.closest && event.target.closest("button, input[type='submit'], input[type='button']");
+        if (!button) return;
+        if (button.dataset.heikoBusyCount) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        remember(button);
+    }, true);
+    // Enter キーでフォームを送った場合も、そのフォームの送信ボタンを対象にする
+    document.addEventListener("submit", event => {
+        const form = event.target;
+        const button = event.submitter || (form.querySelector && form.querySelector("button[type='submit'], button:not([type]), input[type='submit']"));
+        if (button && button.dataset.heikoBusyCount) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+        if (button && performance.now() - lastClickAt > CLICK_WINDOW_MS) remember(button);
+    }, true);
+
+    const innerFetch = window.fetch;
+    window.fetch = function (input, init) {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        const method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
+        let button = null;
+        if (lastButton && method !== "GET" && url.includes("script.google.com/") && performance.now() - lastClickAt <= CLICK_WINDOW_MS && document.contains(lastButton)) {
+            button = lastButton;
+            start(button);
+        }
+        const promise = innerFetch.apply(this, arguments);
+        if (!button) return promise;
+        // 応答の本文を読み終わるまで待つと遅くなるため、応答が返った時点で戻す
+        return promise.then(response => { end(button); return response; }, error => { end(button); throw error; });
+    };
+})();
+
 // メニューボタンの開閉状態を読み上げソフトに伝える（各ページの toggleMenu はクラスを切り替えるだけなので、クラスの変化に追従する）
 // =====================================================================
 // UI / UX アニメーション（全ページ共通）

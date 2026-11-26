@@ -1588,3 +1588,25 @@ html body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscal
 .heiko-tour-next { border:0; background:var(--ui-green); color:var(--ui-paper); }
 .usage-guide-tour { margin-left:auto; margin-right:8px; min-height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--ui-line); background:var(--ui-soft); color:var(--ui-green); font-weight:800; font-size:13px; cursor:pointer; }
 @media (prefers-reduced-motion: reduce) { .heiko-tour, .heiko-tour-pop.is-in, .heiko-tour-spot, .heiko-tour-pop { animation:none!important; transition:none!important; } }
+
+/* ===== ボタンの「処理中」表示（二重クリック防止） ===== */
+.is-heiko-locked { cursor:progress!important; }
+.is-heiko-busy { position:relative!important; color:transparent!important; -webkit-text-fill-color:transparent!important; pointer-events:none; }
+.is-heiko-busy > :not(.heiko-busy-label) { visibility:hidden; }
+.heiko-busy-label {
+ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:8px;
+ color:currentColor; -webkit-text-fill-color:initial; font-size:inherit; font-weight:inherit; white-space:nowrap;
+ animation:heiko-busy-in .18s ease both;
+}
+/* 文字色は、ボタン本来の色を使う（color を透明にしているため、ここで明示する） */
+.btn-submit-primary .heiko-busy-label, .btn-large .heiko-busy-label, .btn-match .heiko-busy-label, .btn-search .heiko-busy-label,
+.btn-send .heiko-busy-label, .heiko-tour-next .heiko-busy-label, button[class*="primary"] .heiko-busy-label { color:var(--ui-paper); -webkit-text-fill-color:var(--ui-paper); }
+button:not([class*="primary"]):not(.btn-large):not(.btn-match):not(.btn-search):not(.btn-send) .heiko-busy-label { color:var(--ui-green); -webkit-text-fill-color:var(--ui-green); }
+.heiko-busy-spinner {
+ width:1em; height:1em; flex:0 0 1em; border-radius:50%;
+ border:2px solid currentColor; border-right-color:transparent; opacity:.9;
+ animation:heiko-busy-spin .7s linear infinite;
+}
+@keyframes heiko-busy-spin { to { transform:rotate(360deg); } }
+@keyframes heiko-busy-in { from { opacity:0; } to { opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .heiko-busy-spinner { animation-duration:1.6s; } .heiko-busy-label { animation:none; } }
