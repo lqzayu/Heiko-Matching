@@ -489,8 +489,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261126contact">
-    <script src="ui.js?v=20261126busy"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127fb">
+    <script src="ui.js?v=20261127fb"></script>
     <script src="face-camera.js?v=20261118lazy"></script>
     <script src="online.js?v=20260917b" defer></script>
 </head>
@@ -590,6 +590,7 @@
             <button class="btn-update-face" type="button" onclick="startFaceUpdate()">顔認証情報をアップデートする</button>
             <button id="line-link-button" class="btn-large" type="button" onclick="createLineLinkCode()">LINE通知を連携する</button>
             <button id="line-unlink-button" class="btn-delete-account" type="button" onclick="unlinkLineAccount()" style="display:none; margin-top:8px;">LINE連携を解除する</button>
+            <a id="line-add-friend-static" class="line-add-friend" target="_blank" rel="noopener" hidden>LINE公式アカウントを友だち追加</a>
             <div id="line-link-status" style="margin-top:8px; color:#64748b; font-size:13px;" aria-live="polite">連携状態を確認中...</div>
             <div id="line-link-result" style="display:none; margin:12px 0 4px; padding:14px; border-radius:12px; background:rgba(28,189,197,.1); color:var(--ui-ink,#1e293b); line-height:1.7;"></div>
             </div>
@@ -611,6 +612,7 @@
     <div id="cropModal" class="crop-modal">
         <div class="crop-modal-content">
             <h3>表示範囲を選択</h3>
+            <p class="crop-hint">画像を指でドラッグして位置を、2本指（パソコンはホイール）で大きさを合わせてください</p>
             <div class="img-container">
                 <img id="cropImage" src="" alt="トリミング対象">
             </div>
@@ -727,6 +729,18 @@
             status.textContent = lineLinked ? "LINE連携中です。LINE通知を受け取れます。" : "LINE未連携です。";
         }
 
+        // LINE公式アカウントの友だち追加URL（LINE Official Account Manager の「友だち追加ガイド」でコピーした https://lin.ee/... を入れる）
+        const LINE_ADD_FRIEND_URL = "https://line.me/R/ti/p/@925hewrc";
+        function lineAddFriendLink(label) {
+            const link = document.createElement("a");
+            link.className = "line-add-friend";
+            link.href = LINE_ADD_FRIEND_URL;
+            link.target = "_blank";
+            link.rel = "noopener";
+            link.textContent = label || "LINE公式アカウントを友だち追加";
+            return link;
+        }
+
         async function createLineLinkCode() {
             const button = document.getElementById("line-link-button");
             const resultBox = document.getElementById("line-link-result");
@@ -740,8 +754,24 @@
                 const title = document.createElement("strong");
                 title.textContent = `連携コード：${result.message.code}`;
                 const guide = document.createElement("div");
-                guide.textContent = "このコードを10分以内にLINE公式アカウントへ送信してください。コードは一度だけ使えます。";
+                guide.textContent = LINE_ADD_FRIEND_URL
+                    ? "① 下のボタンからLINE公式アカウントを友だち追加 ② トーク画面でこのコードを送信、の順に進めてください（10分以内・コードは一度だけ使えます）。"
+                    : "このコードを10分以内にLINE公式アカウントへ送信してください。コードは一度だけ使えます。";
                 resultBox.append(title, guide);
+                if (LINE_ADD_FRIEND_URL) {
+                    const copy = document.createElement("button");
+                    copy.type = "button";
+                    copy.className = "line-copy-code";
+                    copy.dataset.noBusy = "";
+                    copy.textContent = "コードをコピー";
+                    copy.onclick = async () => {
+                        try { await navigator.clipboard.writeText(result.message.code); copy.textContent = "コピーしました"; } catch (e) { copy.textContent = "長押しでコピーしてください"; }
+                    };
+                    const actions = document.createElement("div");
+                    actions.className = "line-link-actions";
+                    actions.append(lineAddFriendLink("① 友だち追加する"), copy);
+                    resultBox.append(actions);
+                }
                 resultBox.style.display = "block";
             } catch (error) {
                 alert(error.message || "LINE連携コードを発行できませんでした");
@@ -749,6 +779,12 @@
                 button.disabled = false;
                 button.textContent = originalText;
             }
+        }
+
+        if (LINE_ADD_FRIEND_URL) {
+            const staticLink = document.getElementById("line-add-friend-static");
+            staticLink.href = LINE_ADD_FRIEND_URL;
+            staticLink.hidden = false;
         }
 
         async function unlinkLineAccount() {
@@ -853,11 +889,18 @@
 
                 if (cropper) { cropper.destroy(); }
                 cropper = new Cropper(cropImage, {
-                    aspectRatio: 1, viewMode: 1, autoCropArea: 0.8, background: false
+                    aspectRatio: 1, viewMode: 1, autoCropArea: 0.9, background: false,
+                    // 切り抜き枠は固定して、画像のほうをドラッグ・2本指（PCはホイール）で合わせる。
+                    // タップで枠が作り直されたり、大きさが変わったりしないようにする
+                    dragMode: "move", cropBoxMovable: false, cropBoxResizable: false, toggleDragModeOnDblclick: false
                 });
             };
             reader.readAsDataURL(file);
         }
+
+        // 切り抜き画面で長押ししても、画像のメニュー（コピー・ダウンロードなど）が出ないようにする
+        document.getElementById("cropModal").addEventListener("contextmenu", event => event.preventDefault());
+        document.getElementById("cropModal").addEventListener("dragstart", event => event.preventDefault());
 
         function executeCrop() {
             if (!cropper) return;

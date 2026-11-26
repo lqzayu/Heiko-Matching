@@ -1360,8 +1360,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261126contact">
-    <script src="ui.js?v=20261126busy"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127fb">
+    <script src="ui.js?v=20261127fb"></script>
     <script src="tour.js?v=20261126c" defer></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
@@ -2172,7 +2172,10 @@
                         ${item.grade || item.dept ? `<div class="user-badge">${escapeHtml([item.grade, item.dept].filter(Boolean).join(" | "))}</div>` : ""}
                         <span class="countdown-badge" ${timerAttribute}>⏳ 計算中...</span>
                     </div>
-                    <h3>${escapeHtml(item.name)}</h3>
+                    <div class="user-card-person">
+                        <span class="user-card-avatar" aria-hidden="true">${escapeHtml(String(item.name || "？").charAt(0))}</span>
+                        <h3>${escapeHtml(item.name)}</h3>
+                    </div>
                     <p>${escapeHtml(item.content)}</p>
                     ${tagsHtml}
                     <div class="quick-reaction-area">
@@ -2189,6 +2192,8 @@
                         <button type="button" class="btn-card-action btn-card-report">通報</button>
                     </div>
                 `;
+
+                heikoApplyAvatar(card.querySelector(".user-card-avatar"), item.profileImage);
 
                 card.querySelector(".btn-card-block").addEventListener("click", () => {
                     blockUser(item.email, item.name);

@@ -240,7 +240,7 @@ function doPost(e) {
       const rows = sheetUser.getDataRange().getValues();
       const profiles = targetUserIds.map(targetId => {
         const row = findUserRow(rows, targetId);
-        return { userId: targetId, name: getUserDisplayName(row, targetId) };
+        return { userId: targetId, name: getUserDisplayName(row, targetId), profileImage: getPublicProfileImage(row) };
       });
       return createRes("success", profiles);
     }
@@ -1052,6 +1052,7 @@ function doPost(e) {
       }
       const now = Date.now();
       let list = [];
+      const userRows = sheetUser && sheetUser.getLastRow() > 0 ? sheetUser.getDataRange().getValues() : [];
 
       for (let i = 1; i < rows.length; i++) {
         const postTime = new Date(rows[i][4]).getTime();
@@ -1070,6 +1071,7 @@ function doPost(e) {
             content: rows[i][3],
             time: postTime,
             email: rows[i][5],
+            profileImage: getPublicProfileImage(findUserRow(userRows, rows[i][5])),
             tags: rows[i][6] || "",
             durationMinutes: durationMinutes
           });
@@ -1378,7 +1380,7 @@ function doPost(e) {
         const userRow = findUserRow(userRows, pEmail);
         const pName = getUserDisplayName(userRow, pEmail || "未設定");
         const latest = latestByPartner[pEmail] || {};
-        partnerList.push({ email: pEmail, name: pName, preview: cleanCell(latest.text), sentAt: latest.sentAt || 0 });
+        partnerList.push({ email: pEmail, name: pName, profileImage: getPublicProfileImage(userRow), preview: cleanCell(latest.text), sentAt: latest.sentAt || 0 });
       });
 
       return createRes("success", partnerList);
@@ -2569,6 +2571,13 @@ function isValidFaceFeatures(value) {
   } catch (e) {
     return false;
   }
+}
+
+// 他のユーザーに見せてよいプロフィール画像（未設定・初期アイコン・形式がおかしいものは空）
+function getPublicProfileImage(userRow) {
+  const source = userRow ? cleanCell(userRow[4]) : "";
+  if (!source || source.indexOf("avatar-default") >= 0) return "";
+  return isSafeProfileImage(source) ? source : "";
 }
 
 function isSafeProfileImage(value) {

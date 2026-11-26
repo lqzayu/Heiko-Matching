@@ -429,8 +429,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261126contact">
-    <script src="ui.js?v=20261126busy"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127fb">
+    <script src="ui.js?v=20261127fb"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script>window.HEIKO_FIREBASE_CHAT_ENABLED = true;</script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
@@ -512,6 +512,7 @@
         let lastPartnerSignature = "";
         let gasUnreadCount = 0;
         const partnerNameCache = new Map();
+        const partnerImageCache = new Map();
         const legacyChatTarget = localStorage.getItem("chatTarget") || "";
 
         async function postGas(payload, timeoutMs = 12000) {
@@ -656,6 +657,7 @@
                     const email = String(profile.userId || "").trim();
                     const name = String(profile.name || "").trim();
                     if (email && name) partnerNameCache.set(email, name);
+                    if (email && profile.profileImage) partnerImageCache.set(email, profile.profileImage);
                 });
                 renderPartnerList(gasPartners, listDiv);
             } catch (error) {
@@ -684,7 +686,8 @@
         }
 
         function renderPartnerList(gasPartners, listDiv) {
-            const partners = mergePartnerLists(gasPartners, firebaseInbox);
+            const partners = mergePartnerLists(gasPartners, firebaseInbox)
+                .map(partner => ({ ...partner, profileImage: partnerImageCache.get(partner.email) || partner.profileImage || "" }));
             const signature = JSON.stringify(partners);
             if (signature === lastPartnerSignature) return;
             lastPartnerSignature = signature;
@@ -714,6 +717,7 @@
                 avatar.className = "partner-avatar";
                 avatar.style.background = avatarBg;
                 avatar.textContent = initial;
+                heikoApplyAvatar(avatar, partner.profileImage);
                 avatarRing.appendChild(avatar);
                 const contentBox = document.createElement("div");
                 contentBox.className = "partner-content-box";

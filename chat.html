@@ -465,7 +465,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261126contact">
+    <link rel="stylesheet" href="theme.css?v=20261127fb">
     <style id="chat-fixed-layout">
         html,
         body[data-page="chat"] {
@@ -556,7 +556,7 @@
             }
         }
     </style>
-    <script src="ui.js?v=20261126busy"></script>
+    <script src="ui.js?v=20261127fb"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script>window.HEIKO_FIREBASE_CHAT_ENABLED = true;</script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
@@ -784,11 +784,12 @@
                         link.href = url;
                         link.target = "_blank";
                         link.rel = "noopener noreferrer";
+                        link.addEventListener("click", event => { event.preventDefault(); openImageViewer(url); });
                         const image = document.createElement("img");
                         image.className = "message-attachment-image";
                         image.src = getAttachmentDisplayUrl(url);
                         image.alt = "添付画像";
-                        image.loading = "lazy";
+                        image.decoding = "async";
                         image.onerror = () => { image.alt = "画像を表示できません"; };
                         link.appendChild(image);
                         attachments.appendChild(link);
@@ -1040,14 +1041,58 @@
             });
         }
 
-        function getAttachmentDisplayUrl(value) {
+        function getAttachmentDisplayUrl(value, width) {
             const url = String(value || "");
             const queryMatch = url.match(/[?&]id=([^&]+)/);
             const pathMatch = url.match(/\/d\/([^/]+)/);
             const fileId = queryMatch ? queryMatch[1] : pathMatch ? pathMatch[1] : "";
             if (!fileId || !url.includes("drive.google.com")) return url;
-            return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1200`;
+            return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${width || 480}`;
         }
+
+        // ===== 画像の拡大表示（別のアプリやタブを開かず、この画面の上で表示する） =====
+        let imageViewer = null;
+        function openImageViewer(url) {
+            closeImageViewer(false);
+            const viewer = document.createElement("div");
+            viewer.className = "image-viewer";
+            viewer.setAttribute("role", "dialog");
+            viewer.setAttribute("aria-modal", "true");
+            viewer.setAttribute("aria-label", "画像の拡大表示");
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "image-viewer-close";
+            close.setAttribute("aria-label", "閉じる");
+            close.dataset.noBusy = "";
+            close.textContent = "×";
+            const stage = document.createElement("div");
+            stage.className = "image-viewer-stage";
+            const image = document.createElement("img");
+            image.alt = "添付画像";
+            // まず一覧で読み込み済みの小さい画像を出し、大きい画像が届いたら差し替える
+            image.src = getAttachmentDisplayUrl(url, 480);
+            const large = new Image();
+            large.onload = () => { image.src = large.src; };
+            large.src = getAttachmentDisplayUrl(url, 1600);
+            image.addEventListener("click", event => { event.stopPropagation(); stage.classList.toggle("is-zoomed"); });
+            stage.appendChild(image);
+            stage.addEventListener("click", () => closeImageViewer(true));
+            close.addEventListener("click", () => closeImageViewer(true));
+            viewer.append(stage, close);
+            document.body.appendChild(viewer);
+            imageViewer = viewer;
+            // スマホの「戻る」で、画面を移らずに画像だけ閉じられるようにする
+            history.pushState({ heikoImageViewer: true }, "");
+            close.focus({ preventScroll: true });
+        }
+        function closeImageViewer(goBack) {
+            if (!imageViewer) return;
+            imageViewer.remove();
+            imageViewer = null;
+            if (goBack && history.state && history.state.heikoImageViewer) history.back();
+        }
+        window.addEventListener("popstate", () => closeImageViewer(false));
+        document.addEventListener("keydown", event => { if (event.key === "Escape") closeImageViewer(true); });
 
         function blobToDataUrl(blob) {
             return new Promise((resolve, reject) => {
@@ -1239,6 +1284,7 @@
 
             try {
                 if (firebaseReady) await window.HeikoFirebaseChat.hideConversation(myEmail, targetEmail);
+                try { sessionStorage.removeItem(chatCacheKey()); } catch (error) { /* 消せなくても続ける */ }
                 await postChat({
                     mode: "deleteChatHistory",
                     userId: myEmail,
@@ -1260,6 +1306,21 @@
         document.getElementById("report-user-btn").addEventListener("click", reportCurrentUser);
         document.getElementById("delete-history-btn").addEventListener("click", deleteChatHistory);
 
+        // 開き直したときにすぐ表示できるように、直近の内容をこのタブの中だけに控えておく
+        function chatCacheKey() { return `heiko-chat-cache:${myEmail}|${targetEmail}`; }
+        function saveChatCache(messages) {
+            try { sessionStorage.setItem(chatCacheKey(), JSON.stringify(messages.slice(-60))); } catch (error) { /* 保存できなくても表示はできる */ }
+        }
+        function showCachedMessages() {
+            try {
+                const cached = JSON.parse(sessionStorage.getItem(chatCacheKey()) || "null");
+                if (Array.isArray(cached) && cached.length) {
+                    gasMessages = cached;
+                    renderMessages(mergeMessages(gasMessages, firebaseMessages));
+                }
+            } catch (error) { /* 控えが壊れていたら読み込みを待つ */ }
+        }
+
         async function loadMessages() {
             if (messagesRequest) return messagesRequest;
             messagesRequest = (async () => {
@@ -1270,6 +1331,7 @@
                     const messages = mergeMessages(gasMessages, firebaseMessages);
                     if (messages.some(message => message.to === myEmail && !message.isRead && !message.isUnsent)) markAsRead();
                     renderMessages(messages);
+                    saveChatCache(gasMessages);
                 } catch (error) {
                     console.error("メッセージ取得エラー:", error);
                     if (firebaseMessages.length > 0) renderMessages(firebaseMessages);
@@ -1340,6 +1402,14 @@
             const tempBubble = document.createElement("div");
             tempBubble.className = "message-bubble msg-my temp-msg";
             tempBubble.innerText = text || "画像を送信中...";
+            // 送信が終わるのを待たずに、選んだ画像をその場に表示する
+            outgoingAttachments.forEach(attachment => {
+                const preview = document.createElement("img");
+                preview.className = "temp-attachment";
+                preview.alt = "送信中の画像";
+                preview.src = attachment.data;
+                tempBubble.appendChild(preview);
+            });
             listDiv.appendChild(tempBubble);
             listDiv.scrollTop = listDiv.scrollHeight;
 
@@ -1448,6 +1518,7 @@
                 adminButton.style.display = "inline-block";
             }
 
+            showCachedMessages();
             const firebaseSetup = setupFirebaseChat();
             await loadMessages();
             firebaseSetup.catch(error => console.warn("Firebase初期化エラー:", error));

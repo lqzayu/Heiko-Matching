@@ -154,6 +154,8 @@ function clearHeikoSession() {
     localStorage.removeItem(HEIKO_SESSION_ONLY_KEY);
     localStorage.removeItem(HEIKO_SESSION_UNTIL_KEY);
     try {
+        // チャット画面の一時保存（すぐ表示するための控え）も消す
+        Object.keys(sessionStorage).filter(key => key.startsWith("heiko-chat-cache:")).forEach(key => sessionStorage.removeItem(key));
         sessionStorage.removeItem(HEIKO_SESSION_ACTIVE_KEY);
     } catch (error) {
         console.warn("一時ログイン情報を削除できませんでした。", error);
@@ -1142,6 +1144,21 @@ function installHeikoMotion() {
 
 // ボタンの波紋（押した位置から広がる）
 const HEIKO_RIPPLE_SELECTOR = "button:not(.hamburger-btn):not(.page-help-button):not(.ev-day):not(.chat-back-btn):not(.jm-rec-summary-action), .btn-search, .btn-match, .btn-reload, .heiko-recruit-post, .list-post-button, .usage-intro-button, .usage-guide-primary-link, .jm-kubun-link";
+// 他のユーザーのアイコンを element に表示する。画像がない・読み込めないときは、もとの表示（頭文字）のまま
+function heikoApplyAvatar(element, source) {
+    const value = String(source || "").trim();
+    if (!element || !value || value.includes("avatar-default")) return;
+    if (!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+\/=\r\n]+$/i.test(value) && !/^https:\/\//i.test(value)) return;
+    const image = document.createElement("img");
+    image.className = "heiko-avatar-img";
+    image.alt = "";
+    image.draggable = false;
+    image.addEventListener("load", () => element.classList.add("has-image"));
+    image.addEventListener("error", () => image.remove());
+    image.src = value;
+    element.appendChild(image);
+}
+
 function installHeikoPress() {
     if (window.__heikoPressInstalled) return;
     window.__heikoPressInstalled = true;
@@ -1153,6 +1170,8 @@ function installHeikoPress() {
         const style = getComputedStyle(el);
         if (style.display === "inline" || el.closest(".nav-links")) return;
         el.classList.add("heiko-ripple-host");
+        // もともと absolute などで配置しているボタン（パスワードの「表示」や画像の×）の位置は変えない
+        if (style.position === "static") el.classList.add("heiko-ripple-static");
         const rect = el.getBoundingClientRect();
         const size = Math.max(rect.width, rect.height) * 2.2;
         const ripple = document.createElement("span");
