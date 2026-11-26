@@ -3384,7 +3384,7 @@ function generateResetToken() { return Utilities.getUuid(); }
 // 迷惑メール判定を避けるため、件名と本文の内容を一致させ、送信元・受信理由・心当たりがない場合の案内を必ず入れる。
 // テキスト版と同じ内容の HTML 版も付ける（リンクは表示文字列と実際の URL を同じにする）。
 const MAIL_SENDER_NAME = "平工マッチング";
-const CONTACT_CATEGORIES = ["ログインできない", "ユーザID・パスワード", "利用停止について", "不具合の報告", "その他"];
+const CONTACT_CATEGORIES = ["ログインできない", "メールが届かない", "ユーザID・パスワード", "利用停止について", "不具合の報告", "その他"];
 
 function escapeMailHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
