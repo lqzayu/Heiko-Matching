@@ -452,7 +452,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261126busy">
+    <link rel="stylesheet" href="theme.css?v=20261126contact">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
         [data-page="admin"] .container { max-width: 1120px; margin: 28px auto 8px; }
@@ -784,6 +784,30 @@
                 </div>
             </section>
 
+            <section class="panel" aria-labelledby="contact-title">
+                <div class="panel-head">
+                    <div>
+                        <h2 id="contact-title">✉️ お問い合わせ</h2>
+                        <p class="panel-note">ログイン画面のお問い合わせフォームから届いた内容です。返信はメールアドレス宛にしてください。</p>
+                    </div>
+                    <span class="panel-count" id="contact-count">--</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="table-reports">
+                        <thead>
+                            <tr>
+                                <th>日時</th>
+                                <th>種類</th>
+                                <th>送信者</th>
+                                <th>内容</th>
+                                <th class="col-action">対応</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contact-table-body" data-skeleton="rows" data-count="2" data-columns="5"></tbody>
+                    </table>
+                </div>
+            </section>
+
             <section class="panel" aria-labelledby="school-events-title">
                 <div class="panel-head">
                     <div>
@@ -990,6 +1014,7 @@
                     renderPosts(result.message.posts);
                     updateOnlineCount(result.message.onlineCount);
                     await loadReports(silent);
+                    loadContacts();
                 } else if (!silent) {
                     alert("取得失敗: " + result.message);
                 }
@@ -1159,6 +1184,48 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
+        }
+
+        // ===== お問い合わせ =====
+        async function loadContacts() {
+            const body = document.getElementById("contact-table-body");
+            if (!body) return;
+            try {
+                const result = await postGas({ mode: "adminGetContacts", adminId: ADMIN_ID, adminToken: adminToken });
+                if (result.status !== "success") { body.innerHTML = `<tr class="empty-row"><td colspan="5">取得失敗（GASを新しいバージョンでデプロイしてください）</td></tr>`; return; }
+                const contacts = result.message || [];
+                const open = contacts.filter(c => c.status !== "対応済み").length;
+                setPanelCount("contact-count", contacts.length ? `未対応 ${open}件 / 全${contacts.length}件` : "0件");
+                if (!contacts.length) { body.innerHTML = `<tr class="empty-row"><td colspan="5">お問い合わせはありません</td></tr>`; return; }
+                body.innerHTML = "";
+                contacts.slice().reverse().forEach(c => {
+                    const tr = document.createElement("tr");
+                    const mail = encodeURIComponent(c.email);
+                    tr.innerHTML = `
+                        <td class="col-nowrap">${escapeHtml(c.receivedAt)}</td>
+                        <td class="col-nowrap">${escapeHtml(c.category)}</td>
+                        <td class="col-nowrap">${escapeHtml(c.name)}<span class="cell-sub"><a href="mailto:${mail}">${escapeHtml(c.email)}</a></span>${c.userId ? `<span class="cell-sub">ID: ${escapeHtml(c.userId)}</span>` : ""}</td>
+                        <td class="col-content" style="white-space:pre-wrap;">${escapeHtml(c.message)}${c.adminMemo ? `<span class="cell-sub">メモ：${escapeHtml(c.adminMemo)}</span>` : ""}</td>
+                        <td class="col-action"></td>`;
+                    const select = document.createElement("select");
+                    ["未対応", "対応中", "対応済み"].forEach(status => {
+                        const option = document.createElement("option");
+                        option.value = option.textContent = status;
+                        option.selected = c.status === status;
+                        select.appendChild(option);
+                    });
+                    select.addEventListener("change", async () => {
+                        const adminMemo = prompt("管理者メモを入力してください（任意）", c.adminMemo || "");
+                        if (adminMemo === null) { select.value = c.status; return; }
+                        const res = await postGas({ mode: "adminUpdateContactStatus", adminId: ADMIN_ID, adminToken: adminToken, contactId: c.contactId, status: select.value, adminMemo });
+                        if (res.status === "success") loadContacts(); else alert("更新に失敗しました: " + res.message);
+                    });
+                    tr.querySelector(".col-action").appendChild(select);
+                    body.appendChild(tr);
+                });
+            } catch (e) {
+                body.innerHTML = `<tr class="empty-row"><td colspan="5">通信エラー</td></tr>`;
+            }
         }
 
         async function loadReports(silent = false) {

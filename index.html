@@ -902,7 +902,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261126busy">
+    <link rel="stylesheet" href="theme.css?v=20261126contact">
 
     <style>
         #remember-login:checked + .remember-login-checkmark {
@@ -1112,10 +1112,41 @@
 			</form>
             </div>
             </div>
+            <p class="login-contact">ログインできない・困ったときは <button type="button" class="login-contact-btn" onclick="openContact()" data-no-busy>お問い合わせ</button></p>
         </div>
 
     </div>
 
+
+    <!-- お問い合わせ（ログインできない人も送れる） -->
+    <dialog id="contact-dialog" class="contact-dialog" aria-labelledby="contact-title">
+        <form id="contact-form" novalidate onsubmit="submitContact(event)">
+            <div class="contact-head">
+                <h2 id="contact-title">お問い合わせ</h2>
+                <button type="button" class="contact-close" onclick="closeContact()" aria-label="閉じる" data-no-busy>×</button>
+            </div>
+            <p class="contact-lead">ログインできない、利用停止について知りたいなど、困ったことがあれば送ってください。管理者が確認し、入力したメールアドレスに返信します。</p>
+            <label class="contact-field"><span>種類</span>
+                <select id="contact-category" required>
+                    <option value="">選んでください</option>
+                    <option>ログインできない</option>
+                    <option>ユーザID・パスワード</option>
+                    <option>利用停止について</option>
+                    <option>不具合の報告</option>
+                    <option>その他</option>
+                </select>
+            </label>
+            <div class="contact-row">
+                <label class="contact-field"><span>お名前</span><input id="contact-name" maxlength="50" autocomplete="name" required></label>
+                <label class="contact-field"><span>ユーザID（わかれば）</span><input id="contact-userid" maxlength="64" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+            </div>
+            <label class="contact-field"><span>返信用のメールアドレス</span><input id="contact-email" type="email" maxlength="254" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required></label>
+            <label class="contact-field"><span>内容</span><textarea id="contact-message" maxlength="2000" rows="5" required placeholder="いつ・どの画面で・どうなったかを書いてもらえると早く対応できます"></textarea></label>
+            <input id="contact-website" class="contact-hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <p id="contact-msg" class="contact-msg" aria-live="polite"></p>
+            <button type="submit" class="btn-submit-primary contact-submit" data-busy-label="送信中…">送信する</button>
+        </form>
+    </dialog>
 
     <footer class="footer">
 
@@ -2506,6 +2537,47 @@
 
         });
 
+    </script>
+    <script>
+        // ===== お問い合わせ =====
+        function openContact() {
+            const dialog = document.getElementById("contact-dialog");
+            const userId = document.getElementById("login-userid");
+            if (userId && userId.value.trim() && !document.getElementById("contact-userid").value) document.getElementById("contact-userid").value = userId.value.trim();
+            document.getElementById("contact-msg").textContent = "";
+            if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", "");
+            setTimeout(() => document.getElementById("contact-category").focus(), 50);
+        }
+        function closeContact() {
+            const dialog = document.getElementById("contact-dialog");
+            if (dialog.close) dialog.close(); else dialog.removeAttribute("open");
+        }
+        document.getElementById("contact-dialog").addEventListener("click", event => {
+            if (event.target.id === "contact-dialog") closeContact(); // 外側を押したら閉じる
+        });
+        async function submitContact(event) {
+            event.preventDefault();
+            const msg = document.getElementById("contact-msg");
+            const value = id => document.getElementById(id).value.trim();
+            const payload = { mode: "submitContact", category: value("contact-category"), name: value("contact-name"), userId: value("contact-userid"), email: value("contact-email"), message: value("contact-message"), website: value("contact-website") };
+            const show = (text, type) => { msg.textContent = text; msg.dataset.type = type; };
+            if (!payload.category) return show("お問い合わせの種類を選んでください", "error");
+            if (!payload.name) return show("お名前を入力してください", "error");
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return show("返信用のメールアドレスを正しく入力してください", "error");
+            if (!payload.message) return show("内容を入力してください", "error");
+            try {
+                const result = await postGas(payload, 25000);
+                if (result.status === "success") {
+                    document.getElementById("contact-form").reset();
+                    show("送信しました。管理者が確認して、メールで返信します。", "success");
+                    setTimeout(closeContact, 2200);
+                } else {
+                    show(result.message || "送信できませんでした", "error");
+                }
+            } catch (error) {
+                show("通信エラーが発生しました。時間をおいてもう一度お試しください。", "error");
+            }
+        }
     </script>
 </body>
 

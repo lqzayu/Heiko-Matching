@@ -100,8 +100,8 @@ function doPost(e) {
 
     const mode = data.mode;
 
-    const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword"];
-    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource"];
+    const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword", "submitContact"];
+    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus"];
     if (!publicModes.includes(mode) && !adminModes.includes(mode)) {
       const actorId = getRequestActorId(mode, data);
       const adminProfileRequest = mode === "getUserProfile" && isAdminRequest(data);
@@ -529,8 +529,8 @@ function doPost(e) {
           name: userRows[i][2] || "未設定",
           email: userRows[i][5] || "",
           isVerified: userRows[i][6] === true,
-          // G列が false のとき、H列に認証コードが残っていればメール認証待ち、なければ凍結（BAN）
-          verificationPending: userRows[i][6] !== true && Boolean(cleanCell(userRows[i][7])),
+          isBanned: isBannedUserRow(userRows[i]),
+          verificationPending: userRows[i][6] !== true && !isBannedUserRow(userRows[i]),
           grade: cleanCell(userRows[i][13]),
           dept: cleanCell(userRows[i][14])
         });
@@ -590,11 +590,12 @@ function doPost(e) {
         if (userRows[u][0] === targetUserId) {
           targetEmail = userRows[u][5];
           targetFound = true;
-          const currentStatus = userRows[u][6] === true;
-          newStatus = !currentStatus;
+          // 凍結中なら解除（true）、それ以外なら凍結。凍結は false ではなく "BANNED" と書き、
+          // メール認証待ち（false）と区別できるようにする
+          newStatus = isBannedUserRow(userRows[u]);
 
           ensureUserSessionColumn(sheetUser);
-          sheetUser.getRange(u + 1, 7).setValue(newStatus);
+          sheetUser.getRange(u + 1, 7).setValue(newStatus ? true : USER_BANNED_MARK);
           sheetUser.getRange(u + 1, 13).setValue(Utilities.getUuid());
           break;
         }
@@ -712,10 +713,13 @@ function doPost(e) {
         if (cleanCell(rows[i][5]).toLowerCase() === registerEmail && savedUserId !== registerUserId) return createRes("error", "このメールアドレスは既に使用されています");
       }
 
+      if (existingRowIndex !== -1 && isBannedUserRow(rows[existingRowIndex - 1])) return createRes("error", "このユーザーIDは使用できません");
       if (existingRowIndex !== -1 && rows[existingRowIndex - 1][6] === true) {
         return createRes("error", "このユーザーIDは既に登録されています");
       }
-      if (existingRowIndex !== -1 && cleanCell(rows[existingRowIndex - 1][5]).toLowerCase() !== registerEmail) return createRes("error", "このユーザーIDは既に仮登録されています");
+      // 仮登録（メール未認証）の行は、認証コードの期限（10分）が切れていれば、別のメールアドレスで登録し直せる。
+      // メールアドレスを打ち間違えたまま仮登録した人が、同じユーザIDで登録できなくなるのを防ぐため
+      if (existingRowIndex !== -1 && cleanCell(rows[existingRowIndex - 1][5]).toLowerCase() !== registerEmail && !isExpiredPendingUserRow(rows[existingRowIndex - 1])) return createRes("error", "このユーザーIDは既に仮登録されています。10分ほど待ってから、もう一度登録してください");
 
       const code = generateVerificationCode();
       const expiry = new Date().getTime() + (10 * 60 * 1000);
@@ -756,10 +760,11 @@ function doPost(e) {
             return createRes("error", "このユーザーIDは既に使われています。大文字と小文字の違いは区別されません");
           }
         }
+        if (latestExistingRowIndex !== -1 && isBannedUserRow(latestRows[latestExistingRowIndex - 1])) return createRes("error", "このユーザーIDは使用できません");
         if (latestExistingRowIndex !== -1 && latestRows[latestExistingRowIndex - 1][6] === true) {
           return createRes("error", "このユーザーIDは既に登録されています");
         }
-        if (latestExistingRowIndex !== -1 && cleanCell(latestRows[latestExistingRowIndex - 1][5]).toLowerCase() !== registerEmail) return createRes("error", "このユーザーIDは既に仮登録されています");
+        if (latestExistingRowIndex !== -1 && cleanCell(latestRows[latestExistingRowIndex - 1][5]).toLowerCase() !== registerEmail && !isExpiredPendingUserRow(latestRows[latestExistingRowIndex - 1])) return createRes("error", "このユーザーIDは既に仮登録されています。10分ほど待ってから、もう一度登録してください");
         if (latestExistingRowIndex !== -1) {
           sheetUser.getRange(latestExistingRowIndex, 1, 1, rowData.length).setValues([rowData]);
         } else {
@@ -866,12 +871,20 @@ function doPost(e) {
         return createRes("error", "ユーザーIDまたはパスワードが間違っています");
       }
 
-      if (user[6] !== true) {
-        return createRes("error", "メール認証が完了していません。");
-      }
-
       const dbPassword = user[1] ? user[1].toString().trim() : "";
       const inputPassword = data.password ? data.password.toString().trim() : "";
+
+      if (user[6] !== true) {
+        if (isBannedUserRow(user)) {
+          // 凍結されていることは、パスワードが合っている本人にだけ伝える
+          if (!verifyPassword(dbPassword, inputPassword)) {
+            recordAttemptFailure(loginAttemptKey, loginAttempts, 600);
+            return createRes("error", "ユーザーIDまたはパスワードが間違っています");
+          }
+          return createRes("error", USER_BANNED_MESSAGE);
+        }
+        return createRes("error", "メール認証が完了していません。");
+      }
 
       if (verifyPassword(dbPassword, inputPassword)) {
         clearAttemptFailures(loginAttemptKey);
@@ -913,7 +926,7 @@ function doPost(e) {
       const userRow = faceRowIndex >= 0 ? rows[faceRowIndex] : null;
 
       if (!userRow) return createRes("error", "ユーザーIDが見つかりません。");
-      if (userRow[6] !== true) return createRes("error", "メール認証が完了していません。");
+      if (userRow[6] !== true) return createRes("error", isBannedUserRow(userRow) ? USER_BANNED_MESSAGE : "メール認証が完了していません。");
       if (!userRow[3]) return createRes("error", "このユーザーには顔情報が登録されていません。");
 
       try {
@@ -1468,6 +1481,72 @@ function doPost(e) {
         ""
       ]);
       return createRes("success", "REPORTED");
+    }
+
+    // ===== お問い合わせ（ログインしていなくても送れる） =====
+    if (mode === "submitContact") {
+      const category = cleanCell(data.category);
+      const name = cleanCell(data.name).slice(0, 50);
+      const email = cleanCell(data.email).toLowerCase().slice(0, 254);
+      const userId = cleanCell(data.userId).slice(0, 64);
+      const message = cleanCell(data.message);
+      if (!CONTACT_CATEGORIES.includes(category)) return createRes("error", "お問い合わせの種類を選んでください");
+      if (!name) return createRes("error", "お名前を入力してください");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return createRes("error", "返信用のメールアドレスを正しく入力してください");
+      if (!message || message.length > 2000) return createRes("error", "内容は2000文字以内で入力してください");
+      if (cleanCell(data.website)) return createRes("success", "CONTACT_RECEIVED"); // ロボット対策（画面には出ない欄に入力があれば記録しない）
+      if (!claimCooldown("contact-" + email, 120)) return createRes("error", "続けて送信できません。2分ほど待ってからもう一度お試しください");
+      const hourKey = "contact-count-" + Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMddHH");
+      const cache = CacheService.getScriptCache();
+      const hourCount = Number(cache.get(hourKey) || 0);
+      if (hourCount >= 30) return createRes("error", "ただいまお問い合わせが混み合っています。時間をおいてお試しください");
+      cache.put(hourKey, String(hourCount + 1), 3600);
+
+      const contactSheet = getOrCreateSheet(ss, "問い合わせ", ["受付日時", "問い合わせID", "種類", "お名前", "メールアドレス", "ユーザID", "内容", "対応状況", "管理者メモ"]);
+      const contactId = Utilities.getUuid();
+      contactSheet.appendRow([new Date(), contactId, category, safeSheetText(name, 50), safeSheetText(email, 254), safeSheetText(userId, 64), safeSheetText(message, 2000), "未対応", ""]);
+      try {
+        const notifyTo = PropertiesService.getScriptProperties().getProperty("CONTACT_NOTIFY_EMAIL") || Session.getEffectiveUser().getEmail();
+        if (notifyTo) {
+          MailApp.sendEmail({
+            to: notifyTo, name: MAIL_SENDER_NAME, replyTo: email,
+            subject: `【${MAIL_SENDER_NAME}】お問い合わせ：${category}`,
+            body: [`種類：${category}`, `お名前：${name}`, `メールアドレス：${email}`, `ユーザID：${userId || "（未入力）"}`, "", message, "", "このメールに返信すると、お問い合わせした人に届きます。管理画面の「お問い合わせ」からも確認できます。"].join("\n")
+          });
+        }
+      } catch (mailError) {
+        console.error("お問い合わせの通知メールを送れませんでした", mailError);
+      }
+      return createRes("success", "CONTACT_RECEIVED");
+    }
+
+    if (mode === "adminGetContacts") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const contactSheet = ss.getSheetByName("問い合わせ");
+      const rows = contactSheet && contactSheet.getLastRow() > 1 ? contactSheet.getDataRange().getValues() : [];
+      const contacts = [];
+      for (let i = 1; i < rows.length; i++) {
+        const at = rows[i][0] instanceof Date ? Utilities.formatDate(rows[i][0], "Asia/Tokyo", "yyyy/MM/dd HH:mm") : cleanCell(rows[i][0]);
+        contacts.push({ receivedAt: at, contactId: cleanCell(rows[i][1]), category: cleanCell(rows[i][2]), name: cleanCell(rows[i][3]), email: cleanCell(rows[i][4]), userId: cleanCell(rows[i][5]), message: cleanCell(rows[i][6]), status: cleanCell(rows[i][7]) || "未対応", adminMemo: cleanCell(rows[i][8]) });
+      }
+      return createRes("success", contacts);
+    }
+
+    if (mode === "adminUpdateContactStatus") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const contactSheet = ss.getSheetByName("問い合わせ");
+      const contactId = cleanCell(data.contactId);
+      const nextStatus = cleanCell(data.status);
+      if (!["未対応", "対応中", "対応済み"].includes(nextStatus)) return createRes("error", "対応状況が正しくありません");
+      if (!contactSheet || contactSheet.getLastRow() <= 1) return createRes("error", "お問い合わせが見つかりません");
+      const ids = contactSheet.getRange(2, 2, contactSheet.getLastRow() - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (cleanCell(ids[i][0]) !== contactId) continue;
+        contactSheet.getRange(i + 2, 8).setValue(nextStatus);
+        if (data.adminMemo !== undefined) contactSheet.getRange(i + 2, 9).setValue(safeSheetText(data.adminMemo, 2000));
+        return createRes("success", "CONTACT_UPDATED");
+      }
+      return createRes("error", "お問い合わせが見つかりません");
     }
 
     if (mode === "getReports") {
@@ -3282,11 +3361,30 @@ function verifyPassword(savedPassword, inputPassword) {
   return constantTimeEquals(saved, legacyPasswordHash(inputPassword));
 }
 
+// ===== 凍結（BAN） =====
+// ユーザーシートのG列：true＝認証済み、false＝メール認証待ち、"BANNED"＝管理者が凍結
+const USER_BANNED_MARK = "BANNED";
+const USER_BANNED_MESSAGE = "このアカウントは管理者によって利用停止されています。心当たりがない場合は、意見箱からお問い合わせください。";
+// メール未認証で、認証コードの期限が切れている仮登録の行か
+function isExpiredPendingUserRow(row) {
+  if (!row || row[6] === true || isBannedUserRow(row)) return false;
+  const expiry = Number(row[8]);
+  return !expiry || Date.now() > expiry;
+}
+
+function isBannedUserRow(row) {
+  if (!row) return false;
+  if (cleanCell(row[6]).toUpperCase() === USER_BANNED_MARK) return true;
+  // 以前の凍結（G列を false にしていた）：認証コード（H列）が残っていない false は凍結とみなす
+  return row[6] === false && !cleanCell(row[7]) && Boolean(cleanCell(row[0]));
+}
+
 function generateResetToken() { return Utilities.getUuid(); }
 // ---- アカウント関連メール ----
 // 迷惑メール判定を避けるため、件名と本文の内容を一致させ、送信元・受信理由・心当たりがない場合の案内を必ず入れる。
 // テキスト版と同じ内容の HTML 版も付ける（リンクは表示文字列と実際の URL を同じにする）。
 const MAIL_SENDER_NAME = "平工マッチング";
+const CONTACT_CATEGORIES = ["ログインできない", "ユーザID・パスワード", "利用停止について", "不具合の報告", "その他"];
 
 function escapeMailHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
