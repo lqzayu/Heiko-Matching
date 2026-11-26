@@ -1555,3 +1555,36 @@ html body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscal
   color:var(--ui-green); font-size:clamp(28px,3vw,44px); line-height:1.65; font-weight:700; letter-spacing:-.055em;
  }
 }
+
+/* ===== チュートリアル（ホーム画面の案内） ===== */
+.heiko-tour { position:fixed; inset:0; z-index:5000; animation:heiko-tour-fade .25s ease both; }
+.heiko-tour.is-out { animation:heiko-tour-fade .22s ease reverse both; }
+@keyframes heiko-tour-fade { from { opacity:0; } to { opacity:1; } }
+/* 光らせる枠：周りを暗くする大きな影で「穴」を作る */
+.heiko-tour-spot {
+ position:fixed; border-radius:14px; pointer-events:none;
+ box-shadow:0 0 0 9999px rgba(10,20,16,.58), 0 0 0 3px #d8ef99;
+ transition:left .35s cubic-bezier(.22,1,.36,1), top .35s cubic-bezier(.22,1,.36,1), width .35s cubic-bezier(.22,1,.36,1), height .35s cubic-bezier(.22,1,.36,1);
+}
+.heiko-tour-pop {
+ position:fixed; padding:20px 20px 16px; border-radius:18px; background:var(--ui-paper); color:var(--ui-ink);
+ box-shadow:0 24px 60px rgba(0,0,0,.28); border:1px solid var(--ui-line);
+ transition:left .35s cubic-bezier(.22,1,.36,1), top .35s cubic-bezier(.22,1,.36,1);
+}
+.heiko-tour-pop.is-in { animation:heiko-tour-pop .32s cubic-bezier(.34,1.56,.64,1); }
+@keyframes heiko-tour-pop { from { opacity:0; transform:scale(.94); } to { opacity:1; transform:none; } }
+.heiko-tour-arrow { position:absolute; width:16px; height:16px; background:var(--ui-paper); transform:rotate(45deg); }
+.heiko-tour-arrow[data-side="right"] { border-left:1px solid var(--ui-line); border-bottom:1px solid var(--ui-line); }
+.heiko-tour-arrow[data-side="bottom"] { border-left:1px solid var(--ui-line); border-top:1px solid var(--ui-line); }
+.heiko-tour-arrow[data-side="top"] { border-right:1px solid var(--ui-line); border-bottom:1px solid var(--ui-line); }
+.heiko-tour-count { margin:0 0 4px; font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--ui-green); }
+.heiko-tour-pop h3 { margin:0 0 6px; font-size:17px; font-weight:800; }
+.heiko-tour-body { margin:0 0 16px; font-size:14px; line-height:1.75; color:var(--ui-muted); }
+.heiko-tour-actions { display:flex; align-items:center; gap:8px; }
+.heiko-tour-spacer { flex:1; }
+.heiko-tour-actions button { min-height:40px; padding:0 16px; border-radius:10px; font-weight:800; font-size:14px; cursor:pointer; }
+.heiko-tour-skip { border:0; background:transparent; color:var(--ui-muted); padding:0 6px!important; }
+.heiko-tour-back { border:1px solid var(--ui-line); background:transparent; color:var(--ui-ink); }
+.heiko-tour-next { border:0; background:var(--ui-green); color:var(--ui-paper); }
+.usage-guide-tour { margin-left:auto; margin-right:8px; min-height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--ui-line); background:var(--ui-soft); color:var(--ui-green); font-weight:800; font-size:13px; cursor:pointer; }
+@media (prefers-reduced-motion: reduce) { .heiko-tour, .heiko-tour-pop.is-in, .heiko-tour-spot, .heiko-tour-pop { animation:none!important; transition:none!important; } }

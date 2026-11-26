@@ -1636,6 +1636,30 @@ function doPost(e) {
       }
     }
 
+    // ユーザID・パスワードを忘れたとき：登録したメールアドレスを入力すると、
+    // そのアドレスで登録されているユーザIDと、パスワード再設定ページのURLをメールで送る。
+    // （アドレスが登録されているかどうかは画面に出さない）
+    if (mode === "forgotPassword" && cleanCell(data.email)) {
+      const email = cleanCell(data.email).toLowerCase();
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return createRes("error", "メールアドレスの形式が正しくありません");
+      if (!claimCooldown("forgot-account-" + email, 60)) return createRes("success", "MAIL_SENT_IF_EXISTS");
+      if (!sheetUser || sheetUser.getLastRow() === 0) return createRes("success", "MAIL_SENT_IF_EXISTS");
+      const rows = sheetUser.getDataRange().getValues();
+      let sent = 0;
+      for (let i = 1; i < rows.length && sent < 5; i++) {
+        if (cleanCell(rows[i][5]).toLowerCase() !== email) continue;
+        const canonicalUserId = cleanCell(rows[i][0]);
+        if (!canonicalUserId) continue;
+        const token = generateResetToken();
+        sheetUser.getRange(i + 1, 10).setValue(token);
+        sheetUser.getRange(i + 1, 11).setValue(new Date().getTime() + (30 * 60 * 1000));
+        const resetLink = `${SITE_URL}reset.html?id=${encodeURIComponent(canonicalUserId)}&token=${token}`;
+        sendAccountRecoveryMail(cleanCell(rows[i][5]), canonicalUserId, resetLink);
+        sent++;
+      }
+      return createRes("success", "MAIL_SENT_IF_EXISTS");
+    }
+
     if (mode === "forgotPassword") {
       const userId = data.userId;
       if (!claimCooldown("forgot-password-" + normalizeUserId(userId), 60)) return createRes("success", "MAIL_SENT_IF_EXISTS");
@@ -3305,6 +3329,16 @@ function sendVerificationCodeMail(to, userId, code) {
     `${MAIL_SENDER_NAME}へのご登録ありがとうございます。登録を完了するため、下記の6桁の認証コードを登録画面に入力してください。`
   ], { label: "認証コード", value: code }, [
     "認証コードの有効期限は、このメールの送信から10分間です。"
+  ]);
+}
+
+function sendAccountRecoveryMail(to, userId, resetLink) {
+  sendAccountMail(to, `【${MAIL_SENDER_NAME}】ユーザIDとパスワード再設定のご案内`, [
+    `${MAIL_SENDER_NAME}で、ユーザID・パスワードのお問い合わせを受け付けました。`,
+    `このメールアドレスで登録されているユーザIDは「${userId}」です。ログイン画面でこのユーザIDを入力してください。`,
+    "パスワードを忘れた場合は、下記のページを開いて新しいパスワードを設定してください。"
+  ], { label: "パスワード再設定ページ", value: resetLink, isLink: true }, [
+    "再設定ページの有効期限は、このメールの送信から30分間です。パスワードを覚えている場合は、何もしなくてもそのままログインできます。"
   ]);
 }
 

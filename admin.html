@@ -452,7 +452,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261125login4">
+    <link rel="stylesheet" href="theme.css?v=20261126tour">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
         [data-page="admin"] .container { max-width: 1120px; margin: 28px auto 8px; }
@@ -685,7 +685,7 @@
             <a class="nav-item" href="events.html">学校行事</a>
             <a href="ai-study.html" class="nav-item">AI学習相談</a>
             <a href="junior-meister.html" class="nav-item">JM計算</a>
-            <span class="nav-item active">管理者</span>
+            <a class="nav-item active" id="nav-admin-btn" href="admin.html" aria-current="page" style="color:#dc2626;">管理者</a>
             <a href="profile.html" class="nav-item">マイページ</a>
             <button type="button" class="btn-logout" onclick="logout(); return false;">ログアウト</button>
         </nav>

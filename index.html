@@ -902,7 +902,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261125login4">
+    <link rel="stylesheet" href="theme.css?v=20261126tour">
 
     <style>
         #remember-login:checked + .remember-login-checkmark {
@@ -1059,7 +1059,7 @@
 
                         <br>
 
-                        <button type="button" class="btn-flat" onclick="showForgotPasswordForm()">パスワードを忘れた場合はこちら</button>
+                        <button type="button" class="btn-flat" onclick="showForgotPasswordForm()">ユーザID・パスワードを忘れたかた</button>
 
                     </div>
 
@@ -1096,9 +1096,10 @@
 
                     <div id="forgot-password-section">
 
-                        <input type="text" id="forgot-userid" aria-label="登録したユーザID" placeholder="登録したユーザID">
+                        <p class="code-hint">登録したときのメールアドレスを入力してください。ユーザIDと、パスワード再設定ページのURLをメールでお送りします。</p>
+                        <input type="email" id="forgot-email" aria-label="登録したメールアドレス" placeholder="登録したメールアドレス" maxlength="254" autocomplete="email" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false">
 
-                        <button type="button" class="btn-submit-primary" onclick="runAuthAction(submitForgotPassword)">再設定メールを送信</button>
+                        <button type="button" class="btn-submit-primary" onclick="runAuthAction(submitForgotPassword)">メールを送信</button>
 
                         <button type="button" class="btn-flat" onclick="hideForgotPasswordForm()">キャンセル</button>
 
@@ -2378,13 +2379,8 @@
             document.getElementById("forgot-password-section").style.display = "block";
 
 
-            const userId = document.getElementById("login-userid").value.trim();
-
-            if (userId) {
-
-                document.getElementById("forgot-userid").value = userId;
-
-            }
+            document.getElementById("form-title").innerText = "ユーザID・パスワードの確認";
+            document.getElementById("forgot-email").focus();
 
             updateMsg("", "");
 
@@ -2394,9 +2390,8 @@
         function hideForgotPasswordForm() {
 
             document.getElementById("forgot-password-section").style.display = "none";
-
             document.getElementById("login-section").style.display = "block";
-
+            document.getElementById("form-title").innerText = "ログイン";
             updateMsg("", "");
 
         }
@@ -2404,14 +2399,10 @@
 
         async function submitForgotPassword() {
 
-            const targetUserId = document.getElementById("forgot-userid").value.trim();
-
-            if (!targetUserId) {
-
-                updateMsg("ユーザIDを入力してください", "error");
-
+            const targetEmail = document.getElementById("forgot-email").value.trim();
+            if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+                updateMsg("登録したメールアドレスを正しく入力してください", "error");
                 return;
-
             }
 
 
@@ -2422,14 +2413,13 @@
                 const result = await postGas({
 
                     mode: "forgotPassword",
-
-                    userId: targetUserId
+                    email: targetEmail
 
                 }, 25000);
 
                 if (result.status === "success") {
 
-                    updateMsg("登録済みのメールアドレス宛に、再設定用のリンクを送信しました。メールをご確認ください。", "success");
+                    updateMsg("このメールアドレスで登録がある場合は、ユーザIDとパスワード再設定ページのURLを送信しました。メールをご確認ください（迷惑メールフォルダもご確認ください）。", "success");
 
                 } else {
 
