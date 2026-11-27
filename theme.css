@@ -1914,3 +1914,71 @@ html body .terms-check input#terms-agree:checked { background:#059669!important;
 html body .terms-check input#terms-agree:checked::after { content:""; position:absolute; left:6px; top:2px; width:5px; height:11px; border-right:3px solid #ffffff; border-bottom:3px solid #ffffff; transform:rotate(45deg); }
 html body .terms-check input#terms-agree:focus-visible { outline:3px solid var(--ui-green); outline-offset:2px; }
 html body .terms-check input#terms-agree:disabled { cursor:not-allowed; }
+
+/* ===== マイページ：右側のカードをそろえる ===== */
+/* 並び順：ユーザID → 通知 → 外観とホーム画面追加（横並び） → 連携 → ブロック → 削除 */
+[data-page="profile"] .profile-col-settings > .profile-id-section { order:1; }
+[data-page="profile"] .profile-col-settings > .heiko-notify-settings { order:2; }
+[data-page="profile"] .profile-col-settings > .appearance-settings { order:3; }
+[data-page="profile"] .profile-col-settings > .heiko-pwa-install-card { order:4; }
+[data-page="profile"] .profile-col-settings > .profile-account-section { order:5; }
+[data-page="profile"] .profile-col-settings > #blocked-users-panel { order:6; }
+[data-page="profile"] .profile-col-settings > .profile-danger { order:7; }
+html body[data-page="profile"] .profile-col-settings > :is(.profile-id-section, .heiko-notify-settings, .appearance-settings, .heiko-pwa-install-card, .profile-account-section, #blocked-users-panel) {
+ box-sizing:border-box; width:100%; margin:0!important; padding:20px!important; border:1px solid var(--ui-line)!important; border-radius:18px!important;
+ background:linear-gradient(135deg,var(--glass-surface-strong),var(--glass-surface))!important; box-shadow:none!important; text-align:left!important;
+}
+html body[data-page="profile"] .profile-col-settings > * :is(h3) { margin:0 0 8px!important; font-size:15px!important; font-weight:800!important; line-height:1.5; color:var(--ui-ink)!important; text-align:left!important; }
+html body[data-page="profile"] .profile-col-settings .appearance-settings p, html body[data-page="profile"] .profile-col-settings .profile-id-section p, html body[data-page="profile"] .profile-col-settings .heiko-pwa-install-card p { margin:0 0 12px; font-size:13px; line-height:1.7; color:var(--ui-muted); }
+html body[data-page="profile"] .heiko-pwa-install-card .heiko-pwa-kicker { display:none; }
+html body[data-page="profile"] .profile-account-actions .btn-update-face { display:block; width:100%; min-height:46px; margin:0!important; padding:12px 16px!important; border:1px solid var(--ui-line)!important; border-radius:10px!important; background:var(--ui-soft)!important; color:var(--ui-green)!important; font-size:14px!important; font-weight:700!important; text-decoration:none!important; }
+html body[data-page="profile"] .profile-account-actions #line-link-status { text-align:left; }
+.profile-id-row { display:flex; align-items:center; gap:10px; margin:0 0 10px; }
+.profile-id-row code { flex:1; min-width:0; padding:10px 14px; border:1px dashed var(--ui-line); border-radius:10px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:17px; font-weight:700; color:var(--ui-ink); overflow-wrap:anywhere; user-select:all; -webkit-user-select:all; }
+html body button.profile-id-button { flex:0 0 auto; min-height:42px; margin:0; padding:9px 16px; border:1px solid var(--ui-line); border-radius:10px; background:var(--ui-soft); color:var(--ui-green); box-shadow:none; font-size:13px; font-weight:800; cursor:pointer; }
+html body button.profile-id-button.is-wide { width:100%; }
+html body button.profile-id-button[hidden] { display:none; }
+
+/* 横幅が広いとき：外観とホーム画面追加は同じ高さで横に並べる */
+@media (min-width:1000px) {
+ html body[data-page="profile"] .profile-col-settings > :is(.profile-id-section, .heiko-notify-settings, .profile-account-section, #blocked-users-panel, .profile-danger) { grid-column:1 / -1; }
+ html body[data-page="profile"] .profile-col-settings > :is(.appearance-settings, .heiko-pwa-install-card) { grid-column:auto; display:flex; flex-direction:column; justify-content:flex-start!important; gap:0; }
+ html body[data-page="profile"] .profile-col-settings > .heiko-pwa-install-card > button { margin-top:auto; }
+}
+/* 狭いとき：外側の大きな枠をやめて、同じ形のカードを縦に並べる */
+@media (max-width:999px) {
+ html body[data-page="profile"] .profile-card { margin:0; padding:0!important; border:0!important; background:transparent!important; box-shadow:none!important; backdrop-filter:none!important; -webkit-backdrop-filter:none!important; }
+ html body[data-page="profile"] .profile-layout { display:flex; flex-direction:column; gap:14px; }
+ html body[data-page="profile"] .profile-col-basic { box-sizing:border-box; width:100%; padding:20px; border:1px solid var(--ui-line); border-radius:18px; background:linear-gradient(135deg,var(--glass-surface-strong),var(--glass-surface)); }
+ html body[data-page="profile"] .profile-col-basic .form-group { text-align:left; }
+ html body[data-page="profile"] .profile-col-basic .btn-large { width:100%; margin-bottom:0; }
+ html body[data-page="profile"] .profile-col-settings { display:flex; flex-direction:column; gap:14px; }
+ html body[data-page="profile"] .profile-account-actions { display:flex!important; flex-direction:column; gap:10px!important; margin:4px 0 0!important; }
+ html body[data-page="profile"] .profile-account-actions > button { width:100%; min-height:46px; margin:0!important; }
+ html body[data-page="profile"] .profile-col-settings > .heiko-pwa-install-card > button { width:100%; }
+ html body[data-page="profile"] .profile-danger { margin:0!important; text-align:center; }
+}
+
+/* ===== ユーザID変更の画面 ===== */
+.user-id-dialog { box-sizing:border-box; width:min(480px, calc(100vw - 24px)); max-height:calc(100dvh - 24px); padding:22px; border:1px solid var(--ui-line); border-radius:20px; background:var(--ui-paper); color:var(--ui-ink); box-shadow:0 30px 80px rgba(0,0,0,.3); overflow-y:auto; text-align:left; }
+.user-id-dialog::backdrop { background:rgba(10,20,30,.6); }
+.user-id-dialog h2 { margin:0 0 12px; font-size:18px; font-weight:800; }
+.user-id-notes { margin:0 0 16px; padding-left:20px; font-size:13px; line-height:1.8; }
+.user-id-dialog label { display:flex; flex-direction:column; gap:6px; margin:0 0 12px; font-size:13px; font-weight:700; }
+.user-id-dialog label input { box-sizing:border-box; width:100%; min-height:46px; padding:10px 12px; font-size:16px; }
+.user-id-message { margin:0 0 12px; font-size:13px; font-weight:700; line-height:1.7; color:#d97706; }
+.user-id-message:empty { display:none; }
+.user-id-actions { display:flex; justify-content:flex-end; gap:10px; }
+html body .user-id-dialog button { min-height:44px; margin:0; padding:10px 20px; border-radius:12px; box-shadow:none; font-size:14px; font-weight:800; cursor:pointer; }
+html body .user-id-dialog button.user-id-cancel { border:1px solid var(--ui-line); background:transparent; color:var(--ui-ink); }
+html body .user-id-dialog button.user-id-submit { border:0; background:var(--ui-green); color:var(--ui-paper); }
+html body .user-id-dialog button:disabled { opacity:.5; cursor:not-allowed; }
+.user-id-result { display:block; margin:12px 0 16px; padding:14px; border:1px dashed var(--ui-line); border-radius:12px; text-align:center; font-size:20px; font-weight:800; overflow-wrap:anywhere; user-select:all; -webkit-user-select:all; }
+.profile-id-actions { display:flex; flex-direction:column; gap:8px; }
+.user-id-dialog label.user-id-show { flex-direction:row; align-items:center; gap:8px; font-weight:600; cursor:pointer; }
+html body .user-id-dialog label.user-id-show input { width:20px!important; height:20px!important; min-height:0!important; margin:0; padding:0!important; accent-color:#059669; }
+/* 共通の入力欄の指定でチェックの印が隠れるチェックボックスは、印を自分で描く */
+html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"] { -webkit-appearance:none!important; appearance:none!important; flex:0 0 auto; position:relative; width:20px!important; height:20px!important; min-height:0!important; margin:0!important; padding:0!important; border:2px solid var(--ui-muted)!important; border-radius:6px!important; background:var(--ui-paper)!important; box-shadow:none!important; cursor:pointer; }
+html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"]:checked { background:#059669!important; border-color:#059669!important; }
+html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"]:checked::after { content:""; position:absolute; left:5px; top:1px; width:5px; height:10px; border-right:3px solid #ffffff; border-bottom:3px solid #ffffff; transform:rotate(45deg); }
+html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"]:focus-visible { outline:3px solid var(--ui-green); outline-offset:2px; }

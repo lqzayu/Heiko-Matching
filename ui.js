@@ -944,7 +944,7 @@ function installHeikoSharedStyles() {
 
 (function installUsageLogging() {
     const nativeFetch = window.fetch.bind(window);
-    const ignoredModes = new Set(["recordUsageLog", "recordUsageLogs", "heartbeat", "login", "register", "verifyEmail", "resendVerificationCode", "forgotPassword", "resetPassword", "verify_face_1toN", "verify_face_for_user", "firebaseCustomToken", "getMessages", "getUnreadCount", "getNotificationSummary", "getLatestIncomingMessage", "markAsRead", "getBlockedUsers", "getPushConfig", "registerWebPush", "unregisterWebPush", "getReactions", "markReactionsRead", "getAnnouncements", "markAnnouncementsRead"]);
+    const ignoredModes = new Set(["recordUsageLog", "recordUsageLogs", "heartbeat", "login", "register", "verifyEmail", "resendVerificationCode", "forgotPassword", "resetPassword", "verify_face_1toN", "verify_face_for_user", "firebaseCustomToken", "getMessages", "getUnreadCount", "getNotificationSummary", "getLatestIncomingMessage", "markAsRead", "getBlockedUsers", "getPushConfig", "registerWebPush", "unregisterWebPush", "getReactions", "markReactionsRead", "getAnnouncements", "markAnnouncementsRead", "changePassword", "changeUserId"]);
     const usageLogQueue = [];
     let usageLogTimer = null;
     let usageLogUrl = "";

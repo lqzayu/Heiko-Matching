@@ -489,8 +489,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261128b">
-    <script src="ui.js?v=20261128a"></script>
+    <link rel="stylesheet" href="theme.css?v=20261128e">
+    <script src="ui.js?v=20261128e"></script>
     <script src="tour.js?v=20261128a" defer></script>
     <script src="face-camera.js?v=20261118lazy"></script>
     <script src="online.js?v=20260917b" defer></script>
@@ -578,6 +578,18 @@
             </section>
 
             <div class="profile-col profile-col-settings">
+            <section class="profile-id-section" aria-labelledby="profile-id-title">
+                <h3 id="profile-id-title">ユーザID・パスワード</h3>
+                <p>ログインに使うIDです。画面に表示される「表示名」とは別です。</p>
+                <div class="profile-id-row">
+                    <code id="current-user-id">--</code>
+                    <button type="button" class="profile-id-button" id="copy-user-id" data-no-busy>コピー</button>
+                </div>
+                <div class="profile-id-actions">
+                    <button type="button" class="profile-id-button is-wide" id="change-user-id" data-no-busy>ユーザIDを変更する</button>
+                    <button type="button" class="profile-id-button is-wide" id="change-password" data-no-busy>パスワードを変更する</button>
+                </div>
+            </section>
             <section class="appearance-settings" aria-labelledby="appearance-settings-title">
                 <h3 id="appearance-settings-title">外観設定</h3>
                 <p>端末の設定に合わせるか、ライトモード・ダークモードを固定できます。</p>
@@ -839,6 +851,265 @@
                 : role === TEACHER_GRADE
                     ? "「先生」は管理者が設定しています。学科を選んで保存してください。"
                     : "先生の方は、管理者に「先生」の設定を依頼してください。";
+        }
+
+        // ---------- ユーザID の確認と変更 ----------
+        function installUserIdSection() {
+            const userId = localStorage.getItem("userId") || localStorage.getItem("userEmail") || "";
+            document.getElementById("current-user-id").textContent = userId || "--";
+            document.getElementById("copy-user-id").addEventListener("click", async event => {
+                const button = event.currentTarget;
+                try {
+                    await navigator.clipboard.writeText(userId);
+                    button.textContent = "コピーしました";
+                } catch (error) {
+                    // コピーできない環境では、文字を選んだ状態にする
+                    const range = document.createRange();
+                    range.selectNodeContents(document.getElementById("current-user-id"));
+                    getSelection().removeAllRanges();
+                    getSelection().addRange(range);
+                    button.textContent = "選択しました";
+                }
+                setTimeout(() => { button.textContent = "コピー"; }, 2000);
+            });
+            const changeButton = document.getElementById("change-user-id");
+            // 管理者のIDは変えられない。代理ログイン中は本人のIDを変えないようにする
+            changeButton.hidden = userId === "admin" || localStorage.getItem("isImpersonating") === "true";
+            changeButton.addEventListener("click", () => openUserIdDialog(userId));
+            const passwordButton = document.getElementById("change-password");
+            passwordButton.hidden = localStorage.getItem("isImpersonating") === "true";
+            passwordButton.addEventListener("click", () => openPasswordDialog(userId));
+        }
+
+        // 入力欄は開いたときだけ作る（理由はユーザIDの変更と同じ）
+        function openPasswordDialog(userId) {
+            if (document.getElementById("password-dialog")) return;
+            const dialog = document.createElement("dialog");
+            dialog.id = "password-dialog";
+            dialog.className = "user-id-dialog";
+            dialog.setAttribute("aria-labelledby", "password-dialog-title");
+            dialog.innerHTML = `
+                <h2 id="password-dialog-title">パスワードを変更する</h2>
+                <ul class="user-id-notes">
+                    <li>半角4文字以上で、英大文字・英小文字・数字・記号を各1文字以上含めてください。</li>
+                    <li>1111や1234のような推測されやすい数字の並びは使えません。</li>
+                    <li>変更すると、<strong>ほかの端末はログアウト</strong>になります。この端末はそのまま使えます。</li>
+                </ul>
+                <form id="password-form" novalidate>
+                    <input type="text" class="sr-only" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
+                    <label>今のパスワード<input type="password" id="current-password" maxlength="128" autocomplete="current-password"></label>
+                    <label>新しいパスワード<input type="password" id="next-password" maxlength="128" autocomplete="new-password"></label>
+                    <label>新しいパスワード（確認）<input type="password" id="next-password-confirm" maxlength="128" autocomplete="new-password"></label>
+                    <label class="user-id-show"><input type="checkbox" id="show-passwords"> パスワードを表示する</label>
+                    <p class="user-id-message" id="password-message" role="alert"></p>
+                    <div class="user-id-actions">
+                        <button type="button" class="user-id-cancel" data-no-busy>やめる</button>
+                        <button type="submit" class="user-id-submit">変更する</button>
+                    </div>
+                </form>`;
+            // パスワード管理の機能が、どのアカウントの新しいパスワードかを分かるようにする
+            dialog.querySelector('input[autocomplete="username"]').value = userId;
+            let busy = false;
+            const close = () => {
+                if (busy) return;
+                if (dialog.open) dialog.close();
+                dialog.remove();
+            };
+            dialog.querySelector(".user-id-cancel").addEventListener("click", close);
+            dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+            dialog.querySelector("#show-passwords").addEventListener("change", event => {
+                dialog.querySelectorAll("#current-password, #next-password, #next-password-confirm").forEach(input => { input.type = event.target.checked ? "text" : "password"; });
+            });
+            dialog.querySelector("form").addEventListener("submit", async event => {
+                event.preventDefault();
+                if (busy) return;
+                const value = id => dialog.querySelector(id).value.trim();
+                const current = value("#current-password"), next = value("#next-password"), confirmation = value("#next-password-confirm");
+                const message = dialog.querySelector("#password-message");
+                const show = text => { message.textContent = text; };
+                if (!current || !next || !confirmation) return show("3つの欄をすべて入力してください。");
+                if (next.length < 4 || !/[A-Z]/.test(next) || !/[a-z]/.test(next) || !/[0-9]/.test(next) || !/[^A-Za-z0-9]/.test(next)) return show("新しいパスワードは4文字以上で、英大文字・英小文字・数字・記号を各1文字以上含めてください。");
+                if (next !== confirmation) return show("新しいパスワードと確認の入力が一致しません。");
+                if (next === current) return show("今とは違うパスワードにしてください。");
+                busy = true;
+                const submit = dialog.querySelector(".user-id-submit");
+                const cancel = dialog.querySelector(".user-id-cancel");
+                submit.disabled = cancel.disabled = true;
+                show("変更しています…");
+                // 切り替わる瞬間に、古いログイン情報の通信が失敗してもログアウトしないようにする
+                const sessionHandler = window.handleHeikoSessionResponse;
+                window.handleHeikoSessionResponse = () => false;
+                try {
+                    const result = await postAccountChange({ mode: "changePassword", userId, currentPassword: current, newPassword: next });
+                    if (result.status !== "success") {
+                        show(String(result.message || "").includes("ログインの有効期限") ? "いまは変更できません。ログインし直してもう一度お試しください。" : result.message || "変更できませんでした。");
+                        return;
+                    }
+                    applyNewSession(result.message);
+                    showPasswordChanged(dialog, () => { busy = false; close(); });
+                } catch (error) {
+                    show("通信が途切れました。変更できている場合があります。ログインし直して、新しいパスワードと今のパスワードのどちらで入れるか確認してください。");
+                } finally {
+                    busy = false;
+                    submit.disabled = cancel.disabled = false;
+                    setTimeout(() => { window.handleHeikoSessionResponse = sessionHandler; }, 20000);
+                }
+            });
+            document.body.appendChild(dialog);
+            if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", "");
+        }
+
+        function applyNewSession(session) {
+            localStorage.setItem("sessionToken", session.sessionToken);
+            if (session.adminToken) localStorage.setItem("adminToken", session.adminToken);
+            // この端末の通知は、次に画面を開いたときに登録し直す
+            try {
+                const push = JSON.parse(localStorage.getItem("heiko-push") || "null");
+                if (push) localStorage.setItem("heiko-push", JSON.stringify({ ...push, at: 0 }));
+            } catch (error) { console.warn("通知の登録し直しを予約できませんでした", error); }
+        }
+
+        function showPasswordChanged(dialog, close) {
+            dialog.textContent = "";
+            const title = document.createElement("h2");
+            title.id = "password-dialog-title";
+            title.textContent = "パスワードを変更しました";
+            const lead = document.createElement("p");
+            lead.textContent = "次回のログインからは新しいパスワードを使ってください。ほかの端末はログアウトになります。";
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "user-id-submit";
+            button.textContent = "閉じる";
+            button.addEventListener("click", close);
+            dialog.append(title, lead, button);
+            button.focus();
+        }
+
+        // 入力欄は開いたときだけ作る。画面にパスワード欄を置いたままにすると、
+        // iPhone が表示名の欄をログイン欄とみなしてパスワードの自動入力を出すことがある
+        function openUserIdDialog(currentId) {
+            if (document.getElementById("user-id-dialog")) return;
+            const dialog = document.createElement("dialog");
+            dialog.id = "user-id-dialog";
+            dialog.className = "user-id-dialog";
+            dialog.setAttribute("aria-labelledby", "user-id-dialog-title");
+            dialog.innerHTML = `
+                <h2 id="user-id-dialog-title">ユーザIDを変更する</h2>
+                <ul class="user-id-notes">
+                    <li>次回からは<strong>新しいIDでログイン</strong>します。変更するといったんログアウトします。</li>
+                    <li>チャットや募集などの記録は、そのまま引き継ぎます。</li>
+                    <li>今のIDは、あなたを含めてだれも使えなくなります。</li>
+                    <li>次に変更できるのは30日後です。変更の記録は運営に残ります。</li>
+                    <li>プッシュ通知を使っている場合は、ログインし直したあとにもう一度オンにしてください。</li>
+                </ul>
+                <form id="user-id-form" novalidate>
+                    <label>新しいユーザID<input type="text" id="new-user-id" maxlength="64" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="半角の英数字・_・-（3文字以上）"></label>
+                    <label>今のパスワード（本人確認）<input type="password" id="user-id-password" maxlength="128" autocomplete="current-password"></label>
+                    <p class="user-id-message" id="user-id-message" role="alert"></p>
+                    <div class="user-id-actions">
+                        <button type="button" class="user-id-cancel" data-no-busy>やめる</button>
+                        <button type="submit" class="user-id-submit">変更する</button>
+                    </div>
+                </form>`;
+            let busy = false;
+            let changed = false;
+            const close = () => {
+                if (busy || changed) return;
+                if (dialog.open) dialog.close();
+                dialog.remove();
+            };
+            dialog.querySelector(".user-id-cancel").addEventListener("click", close);
+            dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+            dialog.querySelector("form").addEventListener("submit", async event => {
+                event.preventDefault();
+                if (busy) return;
+                const newId = dialog.querySelector("#new-user-id").value.trim();
+                const password = dialog.querySelector("#user-id-password").value.trim();
+                const message = dialog.querySelector("#user-id-message");
+                const show = text => { message.textContent = text; };
+                if (!/^[A-Za-z0-9_-]{3,64}$/.test(newId) || !/^[A-Za-z0-9]/.test(newId) || !/[A-Za-z]/.test(newId)) return show("新しいIDは半角の英数字・_・- の3〜64文字で、英字を含め、英字か数字で始めてください。");
+                if (newId.toLowerCase() === currentId.toLowerCase()) return show("今のユーザIDと同じです（大文字と小文字は区別されません）。");
+                if (!password) return show("今のパスワードを入力してください。");
+                if (!confirm(`ユーザIDを「${currentId}」から「${newId}」に変更しますか？`)) return;
+                busy = true;
+                const submit = dialog.querySelector(".user-id-submit");
+                submit.disabled = true;
+                dialog.querySelector(".user-id-cancel").disabled = true;
+                show("変更しています。画面を閉じずにお待ちください…");
+                try {
+                    const result = await requestUserIdChange(currentId, newId, password);
+                    if (result.status !== "success") {
+                        show(String(result.message || "").includes("ログインの有効期限") ? "いまは変更できません。ログインし直してもう一度お試しください。" : result.message || "変更できませんでした。");
+                        return;
+                    }
+                    changed = true;
+                    finishUserIdChange(dialog, currentId, result.message.userId);
+                } catch (error) {
+                    show("通信が途切れました。変更できている場合があります。ログインし直して、新しいIDと今のIDのどちらで入れるか確認してください。");
+                } finally {
+                    busy = false;
+                    submit.disabled = false;
+                    const cancel = dialog.querySelector(".user-id-cancel");
+                    if (cancel) cancel.disabled = false;
+                }
+            });
+            document.body.appendChild(dialog);
+            if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", "");
+        }
+
+        // GAS が古いと「ログインの有効期限」と返るため、自動ログアウトする共通の通信は使わない
+        function requestUserIdChange(userId, newUserId, password) {
+            return postAccountChange({ mode: "changeUserId", userId, newUserId, password });
+        }
+
+        async function postAccountChange(payload) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 90000);
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ ...payload, sessionToken: localStorage.getItem("sessionToken") || "" }),
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        function finishUserIdChange(dialog, oldId, newId) {
+            // 古いIDでの通信が失敗しても、この案内を読む前に画面が移らないようにする
+            window.handleHeikoSessionResponse = () => false;
+            // この端末に ID ごとに保存している設定や下書きを、新しいIDに引き継ぐ
+            const prefixes = ["heiko-tour-done", "junior-meister", "junior-meister:recommend-open", "ai-study-state", "heiko-notify-mark", "heiko-push-prompt-closed"];
+            try {
+                prefixes.forEach(prefix => {
+                    ["", ":pending"].forEach(suffix => {
+                        const value = localStorage.getItem(`${prefix}:${oldId}${suffix}`);
+                        if (value === null) return;
+                        localStorage.setItem(`${prefix}:${newId}${suffix}`, value);
+                        localStorage.removeItem(`${prefix}:${oldId}${suffix}`);
+                    });
+                });
+            } catch (error) { console.warn("端末の保存内容を引き継げませんでした", error); }
+            clearHeikoSession();
+            dialog.textContent = "";
+            const title = document.createElement("h2");
+            title.id = "user-id-dialog-title";
+            title.textContent = "ユーザIDを変更しました";
+            const lead = document.createElement("p");
+            lead.textContent = "次の新しいIDでログインしてください。忘れないように控えてください。";
+            const code = document.createElement("code");
+            code.className = "user-id-result";
+            code.textContent = newId;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "user-id-submit";
+            button.textContent = "ログイン画面へ";
+            button.addEventListener("click", () => { window.location.href = "index.html"; });
+            dialog.append(title, lead, code, button);
+            button.focus();
         }
 
         async function syncProfileFromServer() {
@@ -1371,6 +1642,8 @@
             if (adminButton && currentUserId === "admin" && localStorage.getItem("isImpersonating") !== "true") {
                 adminButton.style.display = "inline-block";
             }
+
+            installUserIdSection();
 
             // 管理者アカウントは顔認証を使えない
             if (currentUserId === "admin") {

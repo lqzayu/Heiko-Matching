@@ -7,6 +7,18 @@ const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getPropert
 
 const ADMIN_USER_ID = "admin";
 const WEB_PUSH_SHEET = "Web通知";
+// ユーザIDの変更。なりすましや通報逃れに使われないように、回数を制限して記録を残す
+const ID_CHANGE_LOG_SHEET = "ID変更記録";
+const ID_CHANGE_LOG_HEADERS = ["日時", "変更前", "変更後", "状態"];
+const ID_CHANGE_INTERVAL_DAYS = 30;
+// IDを変えたときに書き換える記録：シート名と、ユーザーIDが入る列（0から数える）。ユーザーのシートは最後に書き換える。
+// 問い合わせと会話閲覧ログは、その時点の記録なので書き換えない
+const USER_ID_SHEETS = [
+  ["募集", [5]], ["チャット", [0, 1]], ["chat-copy", [0, 1]], ["チャット非表示", [0, 1]], ["ブロック", [0, 1]], ["AIログ", [2]], ["JM計算", [0]],
+  ["リアクション", [1, 2]], ["LINE連携", [0]], ["オンライン状況", [0]], ["お知らせ既読", [0]], ["通報", [1, 2, 4]]
+];
+// 通知の送り先は書き換えずに消す（変更後にログインし直して、もう一度オンにする）
+const USER_ID_RESET_SHEETS = [["Web通知", [0]], ["Android通知", [0]]];
 // 利用規約・プライバシーポリシーの版。内容を改定したら日付を更新する（登録した人がどの版に同意したかを記録する）
 const TERMS_VERSION = "2026-11-27";
 // 運営からのお知らせと、利用者ごとにどこまで読んだか
@@ -1947,6 +1959,14 @@ function doPost(e) {
       return createRes("success", "READ_MARKED");
     }
 
+    if (mode === "changePassword") {
+      return changePassword(ss, sheetUser, data);
+    }
+
+    if (mode === "changeUserId") {
+      return changeUserId(ss, sheetUser, data);
+    }
+
     if (mode === "deleteAccount") {
       const email = cleanCell(data.email);
       if (email === ADMIN_USER_ID) return createRes("error", "管理者アカウントは削除できません");
@@ -2924,6 +2944,8 @@ function getRequestActorId(mode, data) {
     getReactions: "email",
     markReactionsRead: "email",
     getAnnouncements: "userId",
+    changeUserId: "userId",
+    changePassword: "userId",
     markAnnouncementsRead: "userId",
     notifyFirebaseMessage: "from",
     getMessages: "user1",
@@ -4113,6 +4135,237 @@ function checkPossiblyReusedUserIds() {
   const candidates = findReusedUserIdCandidates(userIds, records);
   candidates.forEach(item => console.log("要確認: ユーザーID " + item.userId + " ／ 最初の記録 " + format(item.firstRecord) + " ／ 先に登録した人たちの記録は " + format(item.earliestAbove) + " 以降"));
   console.log(candidates.length ? "要確認の数: " + candidates.length : "候補は見つかりませんでした（この方法で分からない場合もあります）");
+}
+
+// ===== パスワードの変更 =====
+// ログイン中の本人が、今のパスワードを確認して変える。ほかの端末はログアウトになり、操作した端末はそのまま使える
+function changePassword(ss, sheetUser, data) {
+  const userId = cleanCell(data.userId);
+  const currentPassword = data.currentPassword ? data.currentPassword.toString().trim() : "";
+  // ログインでは前後の空白を除いて照合するので、保存するときも同じ形にする
+  const newPassword = data.newPassword ? data.newPassword.toString().trim() : "";
+  if (!sheetUser || sheetUser.getLastRow() <= 1) return createRes("error", "ユーザーが見つかりません");
+  if (!currentPassword || !newPassword) return createRes("error", "今のパスワードと新しいパスワードを入力してください");
+
+  // パスワードの総当たりに使えないよう、失敗はログインと合わせて数える
+  const attemptKey = "login-attempt-" + normalizeUserId(userId);
+  const failures = getAttemptCount(attemptKey);
+  if (failures >= 10) return createRes("error", "試行回数が上限に達しました。10分後にもう一度お試しください");
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return createRes("error", "処理が混み合っています。少し待ってからもう一度お試しください");
+  let email = "";
+  let session = null;
+  try {
+    const rows = sheetUser.getDataRange().getValues();
+    const index = rows.findIndex((row, i) => i > 0 && cleanCell(row[0]) === userId);
+    if (index < 1 || rows[index][6] !== true) return createRes("error", "ユーザーが見つかりません");
+    if (!verifyPassword(cleanCell(rows[index][1]), currentPassword)) {
+      recordAttemptFailure(attemptKey, failures, 600);
+      return createRes("error", "今のパスワードが間違っています");
+    }
+    clearAttemptFailures(attemptKey);
+    if (newPassword.length > 128) return createRes("error", "パスワードは128文字以内にしてください");
+    const passwordError = validatePasswordPolicy(newPassword);
+    if (passwordError) return createRes("error", passwordError);
+    if (newPassword === currentPassword) return createRes("error", "今とは違うパスワードにしてください");
+
+    ensureUserSessionColumn(sheetUser);
+    const version = Utilities.getUuid();
+    sheetUser.getRange(index + 1, 2).setValue(hashPassword(newPassword));
+    // 前に送った再設定用のリンクは使えなくする
+    sheetUser.getRange(index + 1, 10).setValue("");
+    sheetUser.getRange(index + 1, 11).setValue("");
+    sheetUser.getRange(index + 1, 13).setValue(version);
+    // ほかの端末に通知が届き続けないようにする（操作した端末は、画面側で登録し直す）
+    USER_ID_RESET_SHEETS.forEach(([name, columns]) => deleteSheetRows(ss.getSheetByName(name), row => columns.some(column => cleanCell(row[column]) === userId)));
+    email = cleanCell(rows[index][5]);
+    session = { sessionToken: createUserSessionToken(userId, version) };
+    if (userId === ADMIN_USER_ID) session.adminToken = createAdminSessionToken();
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+
+  if (email) {
+    try {
+      sendAccountMail(email, "パスワードを変更しました", ["平工マッチングのパスワードが変更されました。ほかの端末はログアウトになります。"], { label: "ユーザID", value: userId }, ["心当たりがない場合は、ログイン画面の「ユーザID・パスワードを忘れたかた」からパスワードを再設定し、運営にも知らせてください。"]);
+    } catch (mailError) {
+      console.error("パスワードの変更：お知らせメールを送れませんでした", mailError);
+    }
+  }
+  return createRes("success", session);
+}
+
+// ===== ユーザIDの変更 =====
+// ログインに使うIDを変える。会話などの記録は新しいIDに引き継ぎ、前のIDはだれも使えないようにする
+function changeUserId(ss, sheetUser, data) {
+  const oldId = cleanCell(data.userId);
+  const newId = cleanCell(data.newUserId);
+  const password = data.password ? data.password.toString().trim() : "";
+  if (oldId === ADMIN_USER_ID) return createRes("error", "管理者アカウントのIDは変更できません");
+  if (!sheetUser || sheetUser.getLastRow() <= 1) return createRes("error", "ユーザーが見つかりません");
+  if (!newId || !password) return createRes("error", "新しいユーザIDとパスワードを入力してください");
+  if (!isSafeIdentifier(newId) || !isAllowedNewUserId(newId)) return createRes("error", USER_ID_RULE_MESSAGE);
+  // 数字だけのIDは表で数値に変わることがあり、記号で始まるIDは数式とみなされることがある
+  if (!/^[A-Za-z0-9]/.test(newId) || !/[A-Za-z]/.test(newId)) return createRes("error", "新しいユーザIDは英字を1文字以上含め、英字か数字で始めてください");
+  if (normalizeUserId(newId) === normalizeUserId(oldId)) return createRes("error", "今のユーザIDと同じです（大文字と小文字の違いは区別されません）");
+  if (normalizeUserId(newId) === ADMIN_USER_ID) return createRes("error", UNAVAILABLE_ID_MESSAGE);
+
+  // パスワードの総当たりに使えないよう、失敗はログインと合わせて数える
+  const attemptKey = "login-attempt-" + normalizeUserId(oldId);
+  const failures = getAttemptCount(attemptKey);
+  if (failures >= 10) return createRes("error", "試行回数が上限に達しました。10分後にもう一度お試しください");
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return createRes("error", "処理が混み合っています。少し待ってからもう一度お試しください");
+  try {
+    const rows = sheetUser.getDataRange().getValues();
+    const index = rows.findIndex((row, i) => i > 0 && cleanCell(row[0]) === oldId);
+    if (index < 1 || rows[index][6] !== true) return createRes("error", "ユーザーが見つかりません");
+    if (!verifyPassword(cleanCell(rows[index][1]), password)) {
+      recordAttemptFailure(attemptKey, failures, 600);
+      return createRes("error", "パスワードが間違っています");
+    }
+    clearAttemptFailures(attemptKey);
+    const waitDays = daysUntilIdChange(ss, oldId);
+    if (waitDays > 0) return createRes("error", "ユーザIDの変更は" + ID_CHANGE_INTERVAL_DAYS + "日に1回までです。あと" + waitDays + "日で変更できます");
+    const taken = rows.some((row, i) => i > 0 && normalizeUserId(row[0]) === normalizeUserId(newId));
+    if (taken || isRetiredUserId(ss, newId) || hasPastUserData(ss, newId)) return createRes("error", UNAVAILABLE_ID_MESSAGE);
+
+    const logSheet = getOrCreateSheet(ss, ID_CHANGE_LOG_SHEET, ID_CHANGE_LOG_HEADERS);
+    logSheet.appendRow([new Date(), safeSheetText(oldId, 64), safeSheetText(newId, 64), "処理中"]);
+    const logRow = logSheet.getLastRow();
+
+    // 先に Firebase の会話を移す。1回の更新でまとめて行うので、失敗した場合は何も変わらない
+    try {
+      migrateFirebaseUser(oldId, newId);
+    } catch (error) {
+      console.error("IDの変更：Firebaseの会話を移せませんでした", error);
+      logSheet.getRange(logRow, 4).setValue("失敗（変更なし）");
+      return createRes("error", "会話の引き継ぎに失敗したため、変更を中止しました。時間をおいてもう一度お試しください");
+    }
+    try {
+      renameUserIdInSheets(ss, oldId, newId);
+      sheetUser.getRange(index + 1, 1).setValue(newId);
+    } catch (error) {
+      console.error("IDの変更：記録を書き換えられませんでした。元に戻します", error);
+      let restored = true;
+      try {
+        renameUserIdInSheets(ss, newId, oldId);
+        sheetUser.getRange(index + 1, 1).setValue(oldId);
+        migrateFirebaseUser(newId, oldId);
+      } catch (restoreError) {
+        restored = false;
+        console.error("IDの変更：元に戻せませんでした", restoreError);
+      }
+      logSheet.getRange(logRow, 4).setValue(restored ? "失敗（元に戻しました）" : "要確認（途中で失敗）");
+      return createRes("error", restored ? "変更に失敗したため、元に戻しました。時間をおいてもう一度お試しください" : "変更の途中で失敗しました。運営にお問い合わせください");
+    }
+
+    USER_ID_RESET_SHEETS.forEach(([name, columns]) => deleteSheetRows(ss.getSheetByName(name), row => columns.some(column => cleanCell(row[column]) === oldId)));
+    retireUserId(ss, oldId, "ID変更");
+    // どの端末も新しいIDでログインし直してもらう。再設定用のリンクも無効にする
+    ensureUserSessionColumn(sheetUser);
+    sheetUser.getRange(index + 1, 10).setValue("");
+    sheetUser.getRange(index + 1, 11).setValue("");
+    sheetUser.getRange(index + 1, 13).setValue(Utilities.getUuid());
+    CacheService.getScriptCache().put("revoked-user-" + oldId, "1", 21600);
+    logSheet.getRange(logRow, 4).setValue("完了");
+
+    // 本人が知らないうちに変えられた場合に気づけるよう、メールでも知らせる
+    const email = cleanCell(rows[index][5]);
+    if (email) {
+      try {
+        sendAccountMail(email, "ユーザIDを変更しました", ["平工マッチングのユーザIDが変更されました。次回からは新しいIDでログインしてください。", "変更前：" + oldId], { label: "新しいユーザID", value: newId }, ["心当たりがない場合は、ログイン画面のお問い合わせから運営に知らせてください。"]);
+      } catch (mailError) {
+        console.error("IDの変更：お知らせメールを送れませんでした", mailError);
+      }
+    }
+    return createRes("success", { userId: newId });
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+function daysUntilIdChange(ss, userId) {
+  const sheet = ss.getSheetByName(ID_CHANGE_LOG_SHEET);
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const latest = sheet.getRange(2, 1, sheet.getLastRow() - 1, ID_CHANGE_LOG_HEADERS.length).getValues()
+    .filter(row => cleanCell(row[2]) === userId && row[3] === "完了")
+    .reduce((max, row) => Math.max(max, new Date(row[0]).getTime() || 0), 0);
+  const remaining = latest + ID_CHANGE_INTERVAL_DAYS * 86400000 - Date.now();
+  return latest && remaining > 0 ? Math.ceil(remaining / 86400000) : 0;
+}
+
+function renameUserIdInSheets(ss, fromId, toId) {
+  USER_ID_SHEETS.forEach(([name, columns]) => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    columns.forEach(column => {
+      if (column >= sheet.getMaxColumns()) return;
+      const cells = [];
+      sheet.getRange(2, column + 1, sheet.getLastRow() - 1, 1).getValues().forEach((row, i) => {
+        if (cleanCell(row[0]) === fromId) cells.push(String.fromCharCode(65 + column) + (i + 2));
+      });
+      // 変わるセルだけを書き換える
+      if (cells.length) sheet.getRangeList(cells).setValue(toId);
+    });
+  });
+}
+
+// Firebase の会話は、IDから作る名前の場所に保存されているので、新しい場所へ移す。
+// すべての書き換えを1回の更新にまとめるので、途中の状態にはならない
+function migrateFirebaseUser(fromId, toId) {
+  const token = getFirebaseAdminToken();
+  if (!token) return;
+  const fromUid = firebaseUserUid(fromId);
+  const toUid = firebaseUserUid(toId);
+  const isUid = value => /^u_[A-Za-z0-9_-]+$/.test(String(value || ""));
+  const renamed = message => {
+    const next = Object.assign({}, message);
+    if (next.from === fromId) next.from = toId;
+    if (next.to === fromId) next.to = toId;
+    if (next.fromUid === fromUid) next.fromUid = toUid;
+    if (next.toUid === fromUid) next.toUid = toUid;
+    return next;
+  };
+  const inbox = firebaseDatabaseRequest(token, "get", "inbox/" + fromUid) || {};
+  const hidden = firebaseDatabaseRequest(token, "get", "hidden/" + fromUid) || {};
+  const updates = {};
+  const partners = new Set(Object.keys(hidden).filter(isUid));
+  const newInbox = {};
+  Object.keys(inbox).forEach(key => {
+    const message = inbox[key] || {};
+    newInbox[key] = renamed(message);
+    const partner = message.fromUid === fromUid ? message.toUid : message.fromUid;
+    if (!isUid(partner) || partner === fromUid) return;
+    partners.add(partner);
+    updates["inbox/" + partner + "/" + key] = renamed(message);
+  });
+  partners.forEach(partner => {
+    const oldPath = "chats/" + [fromUid, partner].sort().join("/");
+    const conversation = firebaseDatabaseRequest(token, "get", oldPath);
+    if (conversation) {
+      const moved = {};
+      Object.keys(conversation).forEach(key => { moved[key] = renamed(conversation[key]); });
+      updates["chats/" + [toUid, partner].sort().join("/")] = moved;
+      updates[oldPath] = null;
+    }
+    const partnerHidden = firebaseDatabaseRequest(token, "get", "hidden/" + partner + "/" + fromUid);
+    if (partnerHidden) {
+      updates["hidden/" + partner + "/" + toUid] = partnerHidden;
+      updates["hidden/" + partner + "/" + fromUid] = null;
+    }
+  });
+  if (Object.keys(inbox).length) {
+    updates["inbox/" + toUid] = newInbox;
+    updates["inbox/" + fromUid] = null;
+  }
+  if (Object.keys(hidden).length) {
+    updates["hidden/" + toUid] = hidden;
+    updates["hidden/" + fromUid] = null;
+  }
+  if (Object.keys(updates).length) firebaseDatabaseRequest(token, "patch", "", updates);
 }
 
 // ===== 運営からのお知らせ =====
