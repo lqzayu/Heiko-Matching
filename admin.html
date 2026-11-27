@@ -452,7 +452,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127u">
+    <link rel="stylesheet" href="theme.css?v=20261127w">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
         [data-page="admin"] .container { max-width: 1120px; margin: 28px auto 8px; }
@@ -1078,12 +1078,44 @@
                     const actions = document.createElement("div");
                     actions.className = "row-actions";
                     actions.append(actionButton, resetButton);
+                    const isTeacher = u.grade === "先生";
+                    if (isTeacher || u.isVerified) {
+                        const teacherButton = document.createElement("button");
+                        teacherButton.type = "button";
+                        teacherButton.className = "btn-action-reset";
+                        teacherButton.textContent = isTeacher ? "先生を解除" : "先生にする";
+                        teacherButton.addEventListener("click", () => setTeacher(u.userId, u.name, !isTeacher, teacherButton));
+                        actions.appendChild(teacherButton);
+                    }
                     actionCell.appendChild(actions);
                 }
 
                 tr.append(idCell, nameCell, emailCell, gradeCell, deptCell, statusCell, actionCell);
                 userBody.appendChild(tr);
             });
+        }
+
+        async function setTeacher(targetUserId, targetName, makeTeacher, button) {
+            const message = makeTeacher
+                ? `${targetUserId}（${targetName}）を「先生」にしますか？\n募集や一覧に「先生」と表示されます。本人であることを確かめてから設定してください。`
+                : `${targetUserId}（${targetName}）の「先生」を解除しますか？\n公開中の募集がある場合は削除されます。`;
+            if (!confirm(message)) return;
+            button.disabled = true;
+            try {
+                const result = await postGas({ mode: "adminSetTeacher", adminId: ADMIN_ID, adminToken: adminToken, targetUserId, isTeacher: makeTeacher });
+                if (result.status !== "success") {
+                    // 古い GAS はこの操作を知らず「ログインの有効期限」と返す
+                    const reason = String(result.message || "").includes("ログインの有効期限") ? "GASを新しいバージョンでデプロイしてください" : result.message;
+                    alert("変更できませんでした: " + reason);
+                    return;
+                }
+                alert(makeTeacher ? "「先生」にしました。本人がマイページで学科を確認して保存すると、募集を投稿できます。" : "「先生」を解除しました。");
+                await loadOverview();
+            } catch (error) {
+                alert("通信エラーが発生しました。");
+            } finally {
+                button.disabled = false;
+            }
         }
 
         async function impersonateUser(targetUserId, targetUserName) {

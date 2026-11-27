@@ -489,7 +489,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127u">
+    <link rel="stylesheet" href="theme.css?v=20261127w">
     <script src="ui.js?v=20261127u"></script>
     <script src="tour.js?v=20261127p" defer></script>
     <script src="face-camera.js?v=20261118lazy"></script>
@@ -551,7 +551,7 @@
 
             <div class="profile-school-grid">
                 <div class="form-group">
-                    <label for="profile-grade">学年</label>
+                    <label for="profile-grade">学年・区分</label>
                     <select id="profile-grade" class="input-large">
                         <option value="">選択してください</option>
                         <option value="1年">1年</option>
@@ -571,6 +571,8 @@
                     </select>
                 </div>
             </div>
+
+            <p class="teacher-hint" id="teacher-hint">先生の方は、管理者に「先生」の設定を依頼してください。</p>
 
             <button class="btn-large" onclick="saveProfile()">設定を保存する</button>
             </section>
@@ -815,6 +817,30 @@
             document.getElementById("nav-links").classList.toggle("open");
         }
 
+        // 「先生」は管理者が設定した人にだけ表示する。本人は学科だけを選ぶ
+        const TEACHER_GRADE = "先生";
+        const TEACHER_ONLY_DEPARTMENT = "共通教科・その他";
+        const ADMIN_GRADE = "管理者";
+        function applyTeacherMode(grade) {
+            // 「管理者」は admin アカウントだけ。「先生」は管理者が設定したアカウントだけ
+            const isAdminUser = (localStorage.getItem("userId") || localStorage.getItem("userEmail")) === "admin";
+            const role = isAdminUser ? ADMIN_GRADE : grade === TEACHER_GRADE ? TEACHER_GRADE : "";
+            const gradeSelect = document.getElementById("profile-grade");
+            const deptSelect = document.getElementById("profile-dept");
+            [[gradeSelect, TEACHER_GRADE, role === TEACHER_GRADE], [gradeSelect, ADMIN_GRADE, role === ADMIN_GRADE], [deptSelect, TEACHER_ONLY_DEPARTMENT, Boolean(role)]].forEach(([select, value, wanted]) => {
+                const option = Array.from(select.options).find(item => item.value === value);
+                if (wanted && !option) select.add(new Option(value, value));
+                else if (!wanted && option) option.remove();
+            });
+            gradeSelect.disabled = Boolean(role);
+            if (role === ADMIN_GRADE) gradeSelect.value = ADMIN_GRADE;
+            document.getElementById("teacher-hint").textContent = role === ADMIN_GRADE
+                ? "管理者アカウントです。学科を選んで保存してください。"
+                : role === TEACHER_GRADE
+                    ? "「先生」は管理者が設定しています。学科を選んで保存してください。"
+                    : "先生の方は、管理者に「先生」の設定を依頼してください。";
+        }
+
         async function syncProfileFromServer() {
             const userId = localStorage.getItem("userId") || localStorage.getItem("userEmail");
             if (!userId) return;
@@ -835,7 +861,8 @@
 
                 document.getElementById("nickname-field").value = name;
                 document.getElementById("profile-icon").src = image || DEFAULT_AVATAR;
-                document.getElementById("profile-grade").value = grade;
+                applyTeacherMode(grade);
+                if (!document.getElementById("profile-grade").disabled || grade === TEACHER_GRADE) document.getElementById("profile-grade").value = grade;
                 document.getElementById("profile-dept").value = dept;
                 updateLineLinkUI();
             } catch (e) {
@@ -1345,7 +1372,8 @@
             }
 
             if (userName) document.getElementById("nickname-field").value = userName;
-            document.getElementById("profile-grade").value = userGrade;
+            applyTeacherMode(userGrade);
+            if (!document.getElementById("profile-grade").disabled || userGrade === TEACHER_GRADE) document.getElementById("profile-grade").value = userGrade;
             document.getElementById("profile-dept").value = userDept;
 
             if (profileImage && profileImage !== "null") {

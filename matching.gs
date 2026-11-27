@@ -20,6 +20,11 @@ const AI_SESSION_LIMIT = 2;
 const USER_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 const SCHOOL_GRADES = ["1年", "2年", "3年"];
 const SCHOOL_DEPARTMENTS = ["機械工学科", "電気工学科", "制御工学科", "土木環境工学科", "情報工学科"];
+// 「先生」は、なりすましを防ぐため管理者だけが設定する（本人はマイページで選べない）
+const TEACHER_GRADE = "先生";
+const TEACHER_ONLY_DEPARTMENT = "共通教科・その他";
+// 「管理者」はユーザーIDが admin のアカウントだけ（admin は新規登録できないので、ほかの人はなれない）
+const ADMIN_GRADE = "管理者";
 
 const LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN") || "";
 const GEMINI_MODEL = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-3.5-flash-lite";
@@ -108,7 +113,7 @@ function doPost(e) {
     const mode = data.mode;
 
     const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword", "submitContact"];
-    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus"];
+    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher"];
     if (!publicModes.includes(mode) && !adminModes.includes(mode)) {
       const actorId = getRequestActorId(mode, data);
       const adminProfileRequest = mode === "getUserProfile" && isAdminRequest(data);
@@ -256,7 +261,7 @@ function doPost(e) {
         email: cleanCell(userRow[5]) || cleanCell(userRow[0]),
         name: cleanCell(userRow[2]),
         profileImage: cleanCell(userRow[4]),
-        grade: cleanCell(userRow[13]),
+        grade: displayGrade(userRow[0], userRow[13]),
         dept: cleanCell(userRow[14]),
         lineLinked: Boolean(cleanCell(userRow[11]))
       };
@@ -562,7 +567,7 @@ function doPost(e) {
           isVerified: userRows[i][6] === true,
           isBanned: isBannedUserRow(userRows[i]),
           verificationPending: userRows[i][6] !== true && !isBannedUserRow(userRows[i]),
-          grade: cleanCell(userRows[i][13]),
+          grade: displayGrade(userRows[i][0], userRows[i][13]),
           dept: cleanCell(userRows[i][14])
         });
       }
@@ -589,6 +594,31 @@ function doPost(e) {
         posts: posts,
         onlineCount: onlineUserIds.length
       });
+    }
+
+    if (mode === "adminSetTeacher") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const targetUserId = cleanCell(data.targetUserId);
+      const makeTeacher = data.isTeacher === true;
+      if (!targetUserId || targetUserId === ADMIN_USER_ID) return createRes("error", "対象ユーザーを確認してください");
+      if (!sheetUser || sheetUser.getLastRow() <= 1) return createRes("error", "対象ユーザーが見つかりません");
+      ensureUserSchoolColumns(sheetUser);
+      const userRows = sheetUser.getDataRange().getValues();
+      const index = userRows.findIndex((row, i) => i > 0 && cleanCell(row[0]) === targetUserId);
+      if (index < 1) return createRes("error", "対象ユーザーが見つかりません");
+      if (makeTeacher && userRows[index][6] !== true) return createRes("error", "メール認証が済んでいて、凍結されていないユーザーだけを先生にできます");
+
+      sheetUser.getRange(index + 1, 14).setValue(makeTeacher ? TEACHER_GRADE : "");
+      if (!makeTeacher && cleanCell(userRows[index][14]) === TEACHER_ONLY_DEPARTMENT) sheetUser.getRange(index + 1, 15).setValue("");
+
+      // 解除したあとに「先生」の表示が残らないよう、公開中の募集は削除する
+      if (!makeTeacher && sheetRecruit && sheetRecruit.getLastRow() > 1) {
+        const recruitRows = sheetRecruit.getDataRange().getValues();
+        for (let r = recruitRows.length - 1; r >= 1; r--) {
+          if (cleanCell(recruitRows[r][5]) === targetUserId && cleanCell(recruitRows[r][1]) === TEACHER_GRADE) sheetRecruit.deleteRow(r + 1);
+        }
+      }
+      return createRes("success", makeTeacher ? "TEACHER_SET" : "TEACHER_REMOVED");
     }
 
     if (mode === "adminDeletePost") {
@@ -729,6 +759,7 @@ function doPost(e) {
       if (data.faceFeatures && !isValidFaceFeatures(data.faceFeatures)) {
         return createRes("error", "顔情報の形式が正しくないか、データが大きすぎます");
       }
+      if (isReservedDisplayName(registerUserId, data.name)) return createRes("error", RESERVED_NAME_MESSAGE);
       if (!claimCooldown("register-mail-" + normalizeUserId(registerUserId), 60)) return createRes("error", "認証メールは1分後に再送できます");
 
       const rows = sheetUser.getLastRow() > 0 ? sheetUser.getDataRange().getValues() : [];
@@ -1011,8 +1042,6 @@ function doPost(e) {
       const grade = cleanCell(data.grade);
       const dept = cleanCell(data.dept);
       if (!cleanCell(name) || String(name).length > 50) return createRes("error", "表示名は50文字以内で入力してください");
-      if (!SCHOOL_GRADES.includes(grade)) return createRes("error", "学年を選択してください");
-      if (!SCHOOL_DEPARTMENTS.includes(dept)) return createRes("error", "学科を選択してください");
       if (!sheetUser || sheetUser.getLastRow() === 0) return createRes("error", "ユーザーが見つかりません");
       ensureUserSchoolColumns(sheetUser);
       const rows = sheetUser.getDataRange().getValues();
@@ -1026,12 +1055,22 @@ function doPost(e) {
       }
 
       if (userRowIndex !== -1) {
+        // 管理者かどうかはユーザーIDで、先生かどうかは保存済みの値（管理者が設定したもの）で決める
+        const isAdminUser = cleanCell(rows[userRowIndex - 1][0]) === ADMIN_USER_ID;
+        const isTeacher = !isAdminUser && cleanCell(rows[userRowIndex - 1][13]) === TEACHER_GRADE;
+        const hasRole = isAdminUser || isTeacher;
+        const savingGrade = isAdminUser ? ADMIN_GRADE : isTeacher ? TEACHER_GRADE : grade;
+        if (isReservedDisplayName(rows[userRowIndex - 1][0], name)) return createRes("error", RESERVED_NAME_MESSAGE);
+        if (!hasRole && grade === ADMIN_GRADE) return createRes("error", "「管理者」は設定できません");
+        if (!hasRole && grade === TEACHER_GRADE) return createRes("error", "「先生」は管理者が設定します。管理者に依頼してください");
+        if (!hasRole && !SCHOOL_GRADES.includes(grade)) return createRes("error", "学年を選択してください");
+        if (!isValidDepartment(savingGrade, dept)) return createRes("error", "学科を選択してください");
         if (profileImage && String(profileImage).length > 49000) {
           return createRes("error", "プロフィール画像のデータが大きすぎます。画像を選び直してください");
         }
         if (profileImage && !isSafeProfileImage(profileImage)) return createRes("error", "プロフィール画像の形式を確認してください");
         sheetUser.getRange(userRowIndex, 3).setValue(safeSheetText(name, 50));
-        sheetUser.getRange(userRowIndex, 14, 1, 2).setValues([[grade, dept]]);
+        sheetUser.getRange(userRowIndex, 14, 1, 2).setValues([[savingGrade, dept]]);
         if (profileImage) {
           sheetUser.getRange(userRowIndex, 5).setValue(profileImage);
         }
@@ -1097,7 +1136,7 @@ function doPost(e) {
         if (now < expiresAt && !blockedPairs[blockKey]) {
           list.push({
             name: rows[i][0],
-            grade: rows[i][1],
+            grade: cleanCell(rows[i][5]) === ADMIN_USER_ID ? ADMIN_GRADE : rows[i][1],
             dept: rows[i][2],
             content: rows[i][3],
             time: postTime,
@@ -1123,9 +1162,9 @@ function doPost(e) {
       const userRows = sheetUser.getDataRange().getValues();
       const requester = findUserRow(userRows, requesterId);
       if (!requester || requester[6] !== true) return createRes("error", "ログイン情報を確認できませんでした");
-      const savedGrade = cleanCell(requester[13]);
+      const savedGrade = displayGrade(requester[0], requester[13]);
       const savedDept = cleanCell(requester[14]);
-      if (!SCHOOL_GRADES.includes(savedGrade) || !SCHOOL_DEPARTMENTS.includes(savedDept)) return createRes("error", "マイページで学年と学科を設定してから投稿してください");
+      if (!(SCHOOL_GRADES.includes(savedGrade) || savedGrade === TEACHER_GRADE || savedGrade === ADMIN_GRADE) || !isValidDepartment(savedGrade, savedDept)) return createRes("error", "マイページで学年と学科を設定してから投稿してください");
       const savedName = getUserDisplayName(requester, requesterId);
 
       ensureRecruitmentDurationColumn(sheetRecruit);
@@ -2538,6 +2577,22 @@ function extractSchoolEventsWithGemini(apiKey, mimeType, fileBase64, startYear) 
     return { error: "AIでの読み取り中にエラーが発生しました。時間をおいてお試しください" };
   }
 }
+
+// 「共通教科・その他」を選べるのは先生と管理者だけ
+function isValidDepartment(grade, dept) {
+  return SCHOOL_DEPARTMENTS.includes(dept) || ((grade === TEACHER_GRADE || grade === ADMIN_GRADE) && dept === TEACHER_ONLY_DEPARTMENT);
+}
+
+// 画面に出す区分。管理者はシートの値に関係なく「管理者」にする
+function displayGrade(userId, savedGrade) {
+  return cleanCell(userId) === ADMIN_USER_ID ? ADMIN_GRADE : cleanCell(savedGrade);
+}
+
+// 管理者のふりを防ぐため、ほかの人の表示名に「管理者」は使えない（全角・半角の空白をはさんでも同じ扱い）
+function isReservedDisplayName(userId, name) {
+  return cleanCell(userId) !== ADMIN_USER_ID && String(name || "").normalize("NFKC").replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, "").includes(ADMIN_GRADE);
+}
+const RESERVED_NAME_MESSAGE = "表示名に「管理者」は使えません";
 
 function createRes(status, msg) {
   return ContentService.createTextOutput(JSON.stringify({ status: status, message: msg }))

@@ -1360,7 +1360,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127u">
+    <link rel="stylesheet" href="theme.css?v=20261127w">
     <script src="ui.js?v=20261127u"></script>
     <script src="tour.js?v=20261127p" defer></script>
     <script src="online.js?v=20260917b" defer></script>
@@ -2119,6 +2119,17 @@
             input.addEventListener("blur", () => setTimeout(closeSearchSuggest, 120));
         }
 
+        // 区分の表示。管理者の印は区分の文字ではなく投稿者のIDで付けるので、ほかの人には付かない
+        function roleBadgeHtml(item) {
+            const isAdminPost = item.email === "admin";
+            const grade = isAdminPost ? "管理者" : (item.grade === "管理者" ? "" : item.grade);
+            const parts = [grade, item.dept].filter(Boolean);
+            if (!parts.length) return "";
+            const role = isAdminPost ? "admin" : grade === "先生" ? "teacher" : "";
+            const mark = role === "admin" ? "★ " : role === "teacher" ? "✓ " : "";
+            return `<div class="user-badge${role ? ` is-${role}` : ""}">${mark}${escapeHtml(parts.join(" | "))}</div>`;
+        }
+
         function renderFilteredRecruitments() {
             const listDiv = document.getElementById("user-list");
             const keyword = document.getElementById("search-input").value.trim().toLowerCase();
@@ -2163,7 +2174,7 @@
 
                 card.innerHTML = `
                     <div style="display:flex; align-items:center; margin-bottom:12px;">
-                        ${item.grade || item.dept ? `<div class="user-badge">${escapeHtml([item.grade, item.dept].filter(Boolean).join(" | "))}</div>` : ""}
+                        ${roleBadgeHtml(item)}
                         <span class="countdown-badge" ${timerAttribute}>⏳ 計算中...</span>
                     </div>
                     <div class="user-card-person">

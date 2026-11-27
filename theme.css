@@ -1847,3 +1847,8 @@ html body button.reply-quote:disabled { cursor:default; opacity:.75; }
 .reply-bar-content .reply-quote-body span { -webkit-line-clamp:1; }
 html body button.reply-cancel { flex:0 0 auto; width:34px; height:34px; min-height:34px; margin:0; padding:0; border:0; border-radius:50%; background:transparent; color:var(--ui-muted); box-shadow:none; font-size:20px; cursor:pointer; }
 @media (prefers-reduced-motion:reduce) { .message-row:not(.is-swiping) { transition:none; } .message-row.is-highlighted { animation:none; background:var(--ui-soft); } }
+
+/* ===== 先生（管理者が設定したアカウント） ===== */
+.teacher-hint { margin:0 0 12px; font-size:12px; line-height:1.7; color:var(--ui-muted); text-align:left; }
+html body .user-badge.is-teacher { background:#b45309!important; border-color:#b45309!important; color:#ffffff!important; font-weight:800; }
+html body .user-badge.is-admin { background:#6d28d9!important; border-color:#6d28d9!important; color:#ffffff!important; font-weight:800; }
