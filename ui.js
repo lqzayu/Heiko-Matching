@@ -174,7 +174,7 @@ function installHeikoNotify() {
     if (document.getElementById("heiko-notify-script")) return;
     const script = document.createElement("script");
     script.id = "heiko-notify-script";
-    script.src = "notify.js?v=20261127p";
+    script.src = "notify.js?v=20261127q";
     document.body.appendChild(script);
 }
 

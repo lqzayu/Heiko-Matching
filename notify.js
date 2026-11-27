@@ -519,7 +519,7 @@
     }
 
     // 管理者が他のユーザーとして見ている間は、その人あての通知を受け取らない
-    if (!loggedIn || page === "index" || page === "reset" || userId === "admin" || localStorage.getItem("isImpersonating") === "true") return;
+    if (!loggedIn || page === "index" || page === "reset" || localStorage.getItem("isImpersonating") === "true") return;
 
     document.addEventListener("pointerdown", () => { if (localStorage.getItem(SOUND_KEY) === "1") unlockSound(); }, { passive: true });
     document.addEventListener("visibilitychange", () => {
