@@ -1360,8 +1360,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127r">
-    <script src="ui.js?v=20261127r"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127u">
+    <script src="ui.js?v=20261127u"></script>
     <script src="tour.js?v=20261127p" defer></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
@@ -1419,10 +1419,16 @@
             <div id="my-post-area"
                 style="background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(28, 189, 197, 0.2); padding: 20px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(24, 76, 92, 0.02); text-align: left; width: 100%; box-sizing: border-box;">
                 <h4 style="margin: 0 0 12px 0; color: #1e293b; font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-                    📢 あなたの現在の募集
+                    📢 <span class="wide-only">あなたの現在の募集</span><span class="narrow-only">自分の募集</span>
                 </h4>
                 <div id="my-post-content" style="font-size: 13px; color: #64748b; line-height: 1.5;">投稿している募集はありません。</div>
             </div>
+
+            <section id="reaction-box" class="reaction-box" aria-labelledby="reaction-box-title" hidden>
+                <h4 id="reaction-box-title">💌 届いたリアクション<small>直近7日間</small></h4>
+                <ul id="reaction-list"></ul>
+                <button type="button" id="reaction-more" class="reaction-more" data-no-busy hidden></button>
+            </section>
         </div>
 
         <div class="main-area">
@@ -1497,11 +1503,13 @@
             </section>
 
             <div class="main-content">
+                <!-- 縦長の画面では、学校行事（左）と自分の募集（右）をここに並べる -->
+                <div id="home-top" class="home-top"></div>
                 <!-- 直近1か月の学校行事（行事がないときは表示しない） -->
                 <section id="school-events-strip" class="se-strip" aria-labelledby="se-strip-title" hidden>
                     <div class="se-strip-head">
-                        <h2 id="se-strip-title"><span aria-hidden="true">📅</span> これから1か月の学校行事</h2>
-                        <a class="se-strip-link" href="events.html">カレンダーを見る <span aria-hidden="true">›</span></a>
+                        <h2 id="se-strip-title"><span aria-hidden="true">📅</span> <span class="wide-only">これから1か月の</span>学校行事</h2>
+                        <a class="se-strip-link" href="events.html"><span class="wide-only">カレンダーを</span><span class="narrow-only">予定を</span>見る <span aria-hidden="true">›</span></a>
                     </div>
                     <ul class="se-strip-list" id="se-strip-list"></ul>
                     <p class="se-strip-more" id="se-strip-more" hidden></p>
@@ -1607,7 +1615,7 @@
                         <h3>気になる相手へすぐ反応できます</h3>
                     </div>
                     <div class="usage-guide-note">
-                        <p><strong>クイックリアクション：</strong>「気になる！」「一緒に勉強したい！」「質問したい！」をワンタップで送れます。</p>
+                        <p><strong>クイックリアクション：</strong>「気になる！」「一緒に勉強したい！」「質問したい！」をワンタップで送れます。チャットとは別で、受け取った人のホームの「届いたリアクション」に表示されます。プッシュ通知やLINE通知は送られません。</p>
                         <p><strong>チャット：</strong>募集内容を見て詳しく相談したいときは「チャットを始める」を押します。</p>
                         <p><strong>ブロック・通報：</strong>相手との接触を止めたいときはブロック、不適切な投稿は通報を使います。</p>
                     </div>
@@ -1726,11 +1734,6 @@
         let allOtherPosts = [];
         let countdownTimer = null;
         let recruitmentsRequest = null;
-
-        function createRequestId(prefix = "msg") {
-            if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
-            return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        }
 
         async function fetchGas(payload, timeoutMs = 12000) {
             const readModes = ["getUserProfile", "getRecruitments"];
@@ -1940,7 +1943,7 @@
                 }
 
                 listDiv.innerHTML = "";
-                myPostContentDiv.innerHTML = "投稿している募集はありません。";
+                myPostContentDiv.innerHTML = `投稿している募集はありません。<button type="button" class="my-post-create narrow-only" onclick="switchTab('recruit'); window.scrollTo({ top: 0 });">＋ 募集を投稿する</button>`;
                 myPostContentDiv.dataset.loaded = "1";
 
                 const now = Date.now();
@@ -1957,6 +1960,8 @@
                     const myItem = myPosts[0];
                     let myTagsHtml = "";
                     const durationLabel = formatRecruitmentDuration(myItem.durationMinutes);
+                    const postedAt = new Date(myItem.time).getTime();
+                    const expireAt = Number.isFinite(postedAt) ? postedAt + getRecruitmentDurationMinutes(myItem.durationMinutes) * 60 * 1000 : 0;
                     if (myItem.tags) {
                         const tagArray = myItem.tags.split(/[,、\s]+/).filter(t => t);
                         myTagsHtml = `<div class="card-tags" style="margin-top:6px; margin-bottom:10px;">` +
@@ -1965,8 +1970,9 @@
                     }
 
                     myPostContentDiv.innerHTML = `
+                        ${expireAt ? `<div class="my-post-status"><span class="my-post-live">公開中</span><span class="countdown-badge" data-expire-time="${expireAt}">⏳ 計算中...</span></div>` : ""}
                         <div style="font-weight: 700; margin-bottom: 6px; color:#1cbdc5; font-size: 12px;">${escapeHtml(myItem.grade)} | ${escapeHtml(myItem.dept)}</div>
-                        <div style="word-wrap: break-word; line-height: 1.5; margin-bottom: 6px; font-size: 13px; color:#475569;">${escapeHtml(myItem.content)}</div>
+                        <div class="my-post-text" style="word-wrap: break-word; line-height: 1.5; margin-bottom: 6px; font-size: 13px; color:#475569;">${escapeHtml(myItem.content)}</div>
                         <div style="margin-bottom:8px; color:#64748b; font-size:11px;">表示期限: ${durationLabel}</div>
                         ${myTagsHtml}
                         <button onclick="deleteMyRecruitment()" style="width: 100%; background: #ffe4e6; color: #e11d48; border: none; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 700; transition: background 0.2s;">
@@ -1976,6 +1982,7 @@
                 }
 
                 renderFilteredRecruitments();
+                startCountdownTimer(); // ほかの人の募集がないときも、自分の募集の残り時間を進める
 
             } catch (e) {
                 if (!e || e.name !== "AbortError") console.error(e);
@@ -2278,12 +2285,175 @@
             return [...new Set(tags)].join(", ");
         }
 
+        // リアクションの通信。GAS が古いと「ログインの有効期限」の返事になるため、
+        // 自動ログアウトする fetchGas は使わない（本当に期限が切れたときは、ほかの通信で分かる）
+        async function postReaction(payload) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ ...payload, sessionToken: localStorage.getItem("sessionToken") || "" }),
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                if (result && result.status !== "success" && String(result.message || "").includes("ログインの有効期限")) {
+                    return { status: "error", message: "いまはリアクションを送れません。ページを読み込み直すか、時間をおいてお試しください" };
+                }
+                return result;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        // ---------- 届いたリアクション（チャットとは別に、自分の募集の近くに表示する） ----------
+        const REACTION_ICONS = { "気になる！": "👀", "一緒に勉強したい！": "✋", "質問したい！": "❓" };
+        const REACTION_PREVIEW = 5;
+        let reactionItems = [];
+        let reactionStamp = "";
+        let reactionRequest = null;
+        let reactionExpanded = false;
+        let reactionSeen = false;      // いま画面に見えているか
+        let reactionScrollWanted = location.hash === "#reactions";
+
+        // 縦長の画面では左の列が一覧の下に回るので、よく見るものは一覧の上へ移す
+        function placeHomeBoxes() {
+            const top = document.getElementById("home-top");
+            const strip = document.getElementById("school-events-strip");
+            const myPost = document.getElementById("my-post-area");
+            const reactions = document.getElementById("reaction-box");
+            if (window.matchMedia(HOME_NARROW_QUERY).matches) {
+                top.append(strip, myPost);          // 左上：学校行事、右上：自分の募集
+                top.after(reactions);
+            } else {
+                top.after(strip);
+                document.querySelector(".sidebar .mypage-area").after(myPost);
+                myPost.after(reactions);
+            }
+            renderSchoolEventStrip(lastSchoolEvents);
+        }
+
+        function reactionTime(time) {
+            const minutes = Math.floor((Date.now() - time) / 60000);
+            if (minutes < 1) return "たった今";
+            if (minutes < 60) return `${minutes}分前`;
+            if (minutes < 1440) return `${Math.floor(minutes / 60)}時間前`;
+            return `${Math.floor(minutes / 1440)}日前`;
+        }
+
+        function renderReactions() {
+            const box = document.getElementById("reaction-box");
+            const list = document.getElementById("reaction-list");
+            const more = document.getElementById("reaction-more");
+            box.hidden = reactionItems.length === 0;
+            list.textContent = "";
+            (reactionExpanded ? reactionItems : reactionItems.slice(0, REACTION_PREVIEW)).forEach(item => {
+                const row = document.createElement("li");
+                row.className = "reaction-item" + (item.unread ? " is-new" : "");
+                const avatar = document.createElement("span");
+                avatar.className = "user-card-avatar";
+                avatar.textContent = (item.fromName || "?").charAt(0);
+                heikoApplyAvatar(avatar, item.profileImage);
+                const text = document.createElement("div");
+                text.className = "reaction-text";
+                const name = document.createElement("strong");
+                name.textContent = item.fromName;
+                const content = document.createElement("span");
+                content.textContent = `${REACTION_ICONS[item.reaction] || ""} ${item.reaction}`;
+                const when = document.createElement("small");
+                when.textContent = (item.unread ? "NEW・" : "") + reactionTime(item.time);
+                text.append(name, content, when);
+                const chat = document.createElement("button");
+                chat.type = "button";
+                chat.className = "reaction-chat";
+                chat.textContent = "チャット";
+                chat.setAttribute("aria-label", `${item.fromName}さんとチャットする`);
+                chat.addEventListener("click", () => startChat(item.from, item.fromName));
+                row.append(avatar, text, chat);
+                list.appendChild(row);
+            });
+            more.hidden = reactionExpanded || reactionItems.length <= REACTION_PREVIEW;
+            more.textContent = `ほか${reactionItems.length - REACTION_PREVIEW}件を表示`;
+        }
+
+        async function loadReactions() {
+            if (reactionRequest) return reactionRequest;
+            reactionRequest = (async () => {
+                try {
+                    const result = await postReaction({ mode: "getReactions", email: localStorage.getItem("userEmail") });
+                    if (result.status !== "success" || !Array.isArray(result.message)) return;
+                    reactionItems = result.message;
+                    renderReactions();
+                    if (reactionScrollWanted && reactionItems.length) showReactionBox();
+                    markSeenReactions();
+                } catch (error) {
+                    reactionStamp = "";
+                    console.warn("リアクションを取得できませんでした", error);
+                } finally {
+                    reactionRequest = null;
+                }
+            })();
+            return reactionRequest;
+        }
+
+        function showReactionBox() {
+            reactionScrollWanted = false;
+            if (location.hash === "#reactions") history.replaceState(null, "", location.href.split("#")[0]);
+            switchTab("search");
+            document.getElementById("reaction-box").scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+
+        // 一覧が実際に画面に出てから「見た」ことにする
+        let reactionMarking = false;
+        async function markSeenReactions() {
+            if (!reactionSeen || reactionMarking || document.visibilityState !== "visible") return;
+            const ids = reactionItems.filter(item => item.unread && !item.marked).map(item => item.id);
+            if (!ids.length) return;
+            reactionMarking = true;
+            try {
+                const result = await postReaction({ mode: "markReactionsRead", email: localStorage.getItem("userEmail"), ids });
+                if (result.status !== "success") return;
+                reactionItems.forEach(item => { if (ids.includes(item.id)) item.marked = true; });
+                if (window.HeikoNotify) window.HeikoNotify.setReactionCount(reactionItems.filter(item => item.unread && !item.marked).length);
+            } catch (error) {
+                console.warn("リアクションの確認を記録できませんでした", error);
+            } finally {
+                reactionMarking = false;
+            }
+        }
+
+        // 新着の確認（notify.js）で変化があったときだけ取り直す
+        window.addEventListener("heiko-reactions", event => {
+            const stamp = `${event.detail.latestTime}`;
+            if (stamp === reactionStamp) {
+                // 取得済みの分を見ていれば、件数の印は出し直さない
+                if (window.HeikoNotify) window.HeikoNotify.setReactionCount(reactionItems.filter(item => item.unread && !item.marked).length);
+                return;
+            }
+            reactionStamp = stamp;
+            loadReactions();
+        });
+        window.addEventListener("heiko-show-reactions", showReactionBox);
+        document.addEventListener("DOMContentLoaded", () => {
+            placeHomeBoxes();
+            window.matchMedia(HOME_NARROW_QUERY).addEventListener("change", placeHomeBoxes);
+            document.getElementById("reaction-more").addEventListener("click", () => { reactionExpanded = true; renderReactions(); });
+            if ("IntersectionObserver" in window) {
+                new IntersectionObserver(entries => {
+                    reactionSeen = entries[0].isIntersecting;
+                    markSeenReactions();
+                }, { threshold: 0.4 }).observe(document.getElementById("reaction-box"));
+            } else {
+                reactionSeen = true;
+            }
+        });
+
         async function sendQuickReaction(targetUserId, targetName, reaction, button) {
             const myUserId = localStorage.getItem("userEmail");
             if (!myUserId || !reaction || !button) return;
 
             const cooldownKey = `quick-reaction:${myUserId}:${targetUserId}:${reaction}`;
-            const requestKey = cooldownKey + ":request";
             const lastSent = Number(sessionStorage.getItem(cooldownKey) || 0);
             if (Date.now() - lastSent < 10 * 60 * 1000) {
                 alert("同じリアクションは、少し時間をおいてから送れます。");
@@ -2291,23 +2461,14 @@
             }
 
             const originalText = button.innerText;
-            const requestId = sessionStorage.getItem(requestKey) || createRequestId("reaction");
-            sessionStorage.setItem(requestKey, requestId);
             button.disabled = true;
             button.innerText = "送信中...";
 
             try {
-                const result = await fetchGas({
-                    mode: "sendMessage",
-                    from: myUserId,
-                    to: targetUserId,
-                    requestId: requestId,
-                    text: `募集を見て「${reaction}」とリアクションしました。`
-                });
+                const result = await postReaction({ mode: "sendReaction", from: myUserId, to: targetUserId, reaction: reaction });
 
                 if (result.status === "success") {
                     sessionStorage.setItem(cooldownKey, String(Date.now()));
-                    sessionStorage.removeItem(requestKey);
                     button.innerText = "送信しました ✓";
                     alert(`${targetName}さんにリアクションを送りました。`);
                 } else {
@@ -2540,14 +2701,27 @@
             window.location.href = "admin.html";
         }
 
-        // 直近1か月の学校行事をホームに出す（最大4件、残りは件数だけ）
+        // 直近1か月の学校行事をホームに出す（横長は最大4件、縦長は3件。残りは件数だけ）
+        // 縦長では左上の枠が空かないように、読み込み中や行事がないときも欄を出す
+        const HOME_NARROW_QUERY = "(max-width: 768px)";
+        let lastSchoolEvents = null;
+        let schoolEventsFailed = false;
         function renderSchoolEventStrip(events) {
+            lastSchoolEvents = events;
             const strip = document.getElementById("school-events-strip");
             const SE = window.HeikoSchoolEvents;
             if (!strip || !SE) return;
-            const upcoming = SE.upcoming(events, 30).filter(event => event.type !== "holiday" || SE.daysUntil(event.date) <= 7);
-            if (!upcoming.length) { strip.hidden = true; return; }
-            const shown = upcoming.slice(0, 4);
+            const narrow = window.matchMedia(HOME_NARROW_QUERY).matches;
+            const upcoming = events ? SE.upcoming(events, 30).filter(event => event.type !== "holiday" || SE.daysUntil(event.date) <= 7) : [];
+            if (!upcoming.length) {
+                strip.hidden = !narrow;
+                document.getElementById("se-strip-list").innerHTML = "";
+                const note = document.getElementById("se-strip-more");
+                note.hidden = false;
+                note.textContent = events ? "1か月以内の行事はありません" : schoolEventsFailed ? "行事を読み込めませんでした" : "読み込み中…";
+                return;
+            }
+            const shown = upcoming.slice(0, narrow ? 3 : 4);
             document.getElementById("se-strip-list").innerHTML = shown.map(event => {
                 const when = SE.relativeLabel(event);
                 const soon = when === "今日" || when === "明日" || when === "開催中";
@@ -2559,13 +2733,17 @@
             }).join("");
             const more = document.getElementById("se-strip-more");
             more.hidden = upcoming.length <= shown.length;
-            more.textContent = `ほかに${upcoming.length - shown.length}件の行事があります`;
+            more.textContent = narrow ? `ほか${upcoming.length - shown.length}件` : `ほかに${upcoming.length - shown.length}件の行事があります`;
             strip.hidden = false;
         }
 
         function loadSchoolEventStrip() {
             if (!window.HeikoSchoolEvents) return;
-            window.HeikoSchoolEvents.load({ onUpdate: renderSchoolEventStrip }).catch(error => console.warn("学校行事を読み込めませんでした", error));
+            window.HeikoSchoolEvents.load({ onUpdate: renderSchoolEventStrip }).catch(error => {
+                console.warn("学校行事を読み込めませんでした", error);
+                schoolEventsFailed = true;
+                renderSchoolEventStrip(lastSchoolEvents);
+            });
         }
         // 開きっぱなしのタブに戻ってきたときも、最新の行事を取り直す
         document.addEventListener("visibilitychange", () => {

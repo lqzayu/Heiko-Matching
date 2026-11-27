@@ -81,6 +81,20 @@ t("T6", "当事者Aが会話のメッセージを削除（null）", false, db =>
 t("T6", "当事者Aが会話全体を削除", false, db => tryUpdate(db, authOf(A), { [conv(A, B)]: null }).ok);
 t("T6", "CがBの受信箱を丸ごと削除", false, db => tryUpdate(db, authOf(C), { [`inbox/${uid(B)}`]: null }).ok);
 
+// T7 返信（replyTo はアプリの返信送信で付く項目）
+const reply = (id, replyTo) => sendUpdates(B, A, id, "それに返信", { replyTo });
+t("T7", "BがAのメッセージに返信（replyTo 付き）", true, db => tryUpdate(db, authOf(B), reply("r1", "m1")).ok);
+t("T7", "129文字以上の replyTo", false, db => tryUpdate(db, authOf(B), reply("r2", "a".repeat(129))).ok);
+t("T7", "文字列でない replyTo", false, db => tryUpdate(db, authOf(B), reply("r3", 5)).ok);
+const withReply = db => tryUpdate(db, authOf(B), reply("r4", "m1")).next;
+const replyPaths = field => [`${conv(A, B)}/${enc("r4")}/${field}`, `inbox/${uid(A)}/${enc("r4")}/${field}`, `inbox/${uid(B)}/${enc("r4")}/${field}`];
+const setAll = (field, value) => Object.fromEntries(replyPaths(field).map(path => [path, value]));
+t("T7", "返信を受け取ったAが既読にする", true, db => tryUpdate(withReply(db), authOf(A), setAll("isRead", true)).ok);
+t("T7", "返信を送ったBが取り消す", true, db => tryUpdate(withReply(db), authOf(B), { ...setAll("text", "このメッセージは送信取り消しされました。"), ...setAll("isUnsent", true), ...setAll("isRead", true) }).ok);
+t("T7", "受信者Aが返信先を書き換える", false, db => tryUpdate(withReply(db), authOf(A), setAll("replyTo", "other")).ok);
+t("T7", "送信後に返信先を書き換える", false, db => tryUpdate(withReply(db), authOf(B), setAll("replyTo", "other")).ok);
+t("T7", "ふつうのメッセージに後から返信先を付ける", false, db => tryUpdate(db, authOf(A), { [`${conv(A, B)}/${key1}/replyTo`]: "x" }).ok);
+
 for (const file of Deno.args) {
   loadRules(file);
   let db;

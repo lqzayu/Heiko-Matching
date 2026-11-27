@@ -7,7 +7,7 @@
 
     const GAS_URL = "https://script.google.com/macros/s/AKfycbyQgkizdGw9MiZjxtlxAHpfMXw5ehLfj9HkzDcR9YLRo1Cm11kfEp4cWYqnNBdDR96w/exec";
     const FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.14.1/";
-    const FIREBASE_CHAT_SRC = "firebase-chat.js?v=20261127n";
+    const FIREBASE_CHAT_SRC = "firebase-chat.js?v=20261127u";
     const POLL_MS = 30000;
     const MIN_REFRESH_MS = 8000;
     const PUSH_KEY = "heiko-push";               // この端末で登録した通知先 {userId, token, at}
@@ -136,10 +136,64 @@
         if (!from || blocked.has(from) || !sameSession()) return;
         // いま開いているチャット相手のメッセージは、画面に出ているので知らせない
         if (page === "chat" && from === localStorage.getItem("chatTarget") && document.visibilityState === "visible") return;
-        const info = { from, name: name || await displayName(from), text: String(text || "画像が送信されました") };
+        const sender = name || await displayName(from);
         playSound();
+        present({
+            title: `${sender} さんからメッセージ`,
+            text: String(text || "画像が送信されました"),
+            open() {
+                localStorage.setItem("chatTarget", from);
+                if (sender !== "ほかのユーザー") localStorage.setItem("chatTargetName", sender);
+                else localStorage.removeItem("chatTargetName");
+                location.href = "chat.html";
+            }
+        });
+    }
+
+    function present(info) {
         if (document.visibilityState === "visible") showToast(info);
         else pendingToast = info; // 画面に戻ったときに出す
+    }
+
+    // ---------- クイックリアクション（チャットとは別。サイト内の表示だけで知らせる） ----------
+    let reactionUnread = 0;
+    function renderReactionBadge() {
+        const link = document.querySelector('.navbar [data-nav-key="home"]');
+        if (!link) return;
+        let badge = link.querySelector(".heiko-reaction-badge");
+        if (!badge) {
+            if (!reactionUnread) return;
+            badge = document.createElement("span");
+            badge.className = "unread-badge heiko-reaction-badge";
+            link.appendChild(badge);
+        }
+        badge.textContent = reactionUnread > 99 ? "99+" : String(reactionUnread);
+        badge.style.display = reactionUnread > 0 ? "inline-grid" : "none";
+        badge.setAttribute("aria-label", `新しいリアクション ${reactionUnread}件`);
+        link.classList.toggle("has-unread", reactionUnread > 0);
+    }
+
+    function setReactionCount(count) {
+        reactionUnread = Math.max(0, Number(count) || 0);
+        renderReactionBadge();
+    }
+
+    // summary がないときは GAS が古いので、何もしない
+    function handleReactions(summary) {
+        if (!summary) return;
+        setReactionCount(summary.unread);
+        window.dispatchEvent(new CustomEvent("heiko-reactions", { detail: summary }));
+        const latest = summary.latest;
+        const previous = advanceMark("reaction", latest && latest.time);
+        if (!latest || previous === null || latest.time <= previous) return;
+        present({
+            title: `${latest.fromName} さんがリアクション`,
+            text: `あなたの募集に「${latest.reaction}」`,
+            open() {
+                if (page === "main") window.dispatchEvent(new CustomEvent("heiko-show-reactions"));
+                else location.href = "main.html#reactions";
+            }
+        });
     }
 
     let toast = null;
@@ -153,6 +207,7 @@
         setTimeout(() => leaving.remove(), 250);
     }
 
+    // info: { title, text, open }（open は押したときの動き）
     function showToast(info) {
         hideToast();
         const box = document.createElement("div");
@@ -163,16 +218,11 @@
         open.className = "heiko-msg-toast-open";
         open.setAttribute("data-no-busy", "");
         const title = document.createElement("strong");
-        title.textContent = `${info.name} さんからメッセージ`;
+        title.textContent = info.title;
         const body = document.createElement("span");
         body.textContent = info.text;
         open.append(title, body);
-        open.addEventListener("click", () => {
-            localStorage.setItem("chatTarget", info.from);
-            if (info.name !== "ほかのユーザー") localStorage.setItem("chatTargetName", info.name);
-            else localStorage.removeItem("chatTargetName");
-            location.href = "chat.html";
-        });
+        open.addEventListener("click", () => { hideToast(); info.open(); });
         const close = document.createElement("button");
         close.type = "button";
         close.className = "heiko-msg-toast-close";
@@ -225,6 +275,7 @@
                 if (result.status !== "success" || !result.message) return;
                 gasUnread = Number(result.message.unreadCount) || 0;
                 renderCount();
+                handleReactions(result.message.reactions);
                 const latest = result.message.latestIncoming;
                 const previous = advanceMark("gas", latest && latest.time);
                 if (latest && previous !== null && latest.time > previous && gasUnread > 0) await announce(latest.fromEmail, latest.fromName, latest.text);
@@ -509,7 +560,7 @@
         });
     }
 
-    window.HeikoNotify = { refresh };
+    window.HeikoNotify = { refresh, setReactionCount };
 
     // ログアウトしたままの端末や、別の人がログインした端末には、前の人の通知を残さない
     const savedPush = readJson(PUSH_KEY);

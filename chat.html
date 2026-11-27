@@ -465,7 +465,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127r">
+    <link rel="stylesheet" href="theme.css?v=20261127u">
     <style id="chat-fixed-layout">
         html,
         body[data-page="chat"] {
@@ -556,13 +556,13 @@
             }
         }
     </style>
-    <script src="ui.js?v=20261127r"></script>
+    <script src="ui.js?v=20261127u"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script>window.HEIKO_FIREBASE_CHAT_ENABLED = true;</script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="firebase-chat.js?v=20261127n" defer></script>
+    <script src="firebase-chat.js?v=20261127u" defer></script>
 </head>
 
 <body data-page="chat">
@@ -610,6 +610,10 @@
         <div class="chat-messages" id="message-list" data-skeleton="chat" data-count="5"></div>
 
         <div class="chat-input-area">
+            <div id="reply-bar" class="reply-bar" hidden>
+                <div id="reply-bar-content" class="reply-bar-content" aria-live="polite"></div>
+                <button type="button" id="reply-cancel" class="reply-cancel" aria-label="返信をやめる" title="返信をやめる" data-no-busy>×</button>
+            </div>
             <div id="attachment-preview" class="attachment-preview" aria-live="polite"></div>
             <div class="chat-message-input-row">
                 <label class="btn-attach" for="attachment-input">画像</label>
@@ -673,6 +677,8 @@
         let firebaseReady = false;
         let firebaseSetupRequest = null;
         let messageSendInProgress = false;
+        let replyTarget = null;          // 返信しようとしているメッセージ
+        let messageById = new Map();     // 引用表示と元の場所への移動に使う
 
         function createRequestId() {
             if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
@@ -774,6 +780,12 @@
             const signature = JSON.stringify(messages);
             if (signature === lastMessagesSignature && tempMsgs.length === 0) return;
             lastMessagesSignature = signature;
+            messageById = new Map(messages.map(message => [String(message.messageId), message]));
+            // 返信を書いている間に元のメッセージが取り消されたら、返信をやめる
+            if (replyTarget) {
+                const latest = messageById.get(String(replyTarget.messageId));
+                if (latest && latest.isUnsent) setReplyTarget(null);
+            }
             if (messages.length === 0 && tempMsgs.length === 0) {
                 listDiv.innerHTML = `<div style="text-align: center; color: #94a3b8; font-size: 13px;">メッセージ履歴はありません</div>`;
                 return;
@@ -782,6 +794,9 @@
             messages.forEach(msg => {
                 const wrapper = document.createElement("div");
                 wrapper.style.cssText = `display:flex; flex-direction:column; align-items:${msg.from === myEmail ? "flex-end" : "flex-start"}; gap:4px;`;
+                wrapper.className = "message-row";
+                wrapper.dataset.messageId = String(msg.messageId);
+                if (msg.replyTo && !msg.isUnsent) wrapper.appendChild(buildReplyQuote(msg.replyTo));
                 if (String(msg.text || "").trim() || msg.isUnsent) {
                     const bubble = document.createElement("div");
                     bubble.className = `message-bubble ${msg.from === myEmail ? "msg-my" : "msg-partner"}`;
@@ -818,11 +833,21 @@
                 if (msg.from === myEmail && !msg.isUnsent && msg.isRead) { const readText = document.createElement("span"); readText.innerText = "既読"; meta.appendChild(readText); }
                 const tools = document.createElement("div");
                 tools.className = "message-tools";
+                if (!msg.isUnsent) {
+                    const replyButton = document.createElement("button");
+                    replyButton.type = "button";
+                    replyButton.className = "message-reply-button";
+                    replyButton.innerHTML = REPLY_ICON;
+                    replyButton.setAttribute("aria-label", "このメッセージに返信");
+                    replyButton.title = "返信";
+                    replyButton.addEventListener("click", event => { event.stopPropagation(); setReplyTarget(msg); });
+                    tools.appendChild(replyButton);
+                }
                 if (!msg.isUnsent) { const actionButton = document.createElement("button"); actionButton.type = "button"; actionButton.className = "message-action-button"; actionButton.innerText = "•••"; actionButton.setAttribute("aria-label", "メッセージの操作"); actionButton.setAttribute("title", "メッセージの操作"); actionButton.addEventListener("click", event => { event.stopPropagation(); showMessageActionMenu(msg, actionButton); }); tools.appendChild(actionButton); }
                 if (tools.childElementCount > 0) meta.appendChild(tools);
                 if (meta.childElementCount > 0) wrapper.appendChild(meta);
                 listDiv.appendChild(wrapper);
-                if (!msg.isUnsent) installMessageLongPress(wrapper, msg);
+                if (!msg.isUnsent) { installMessageLongPress(wrapper, msg); installSwipeReply(wrapper, msg); }
             });
             listDiv.scrollTop = listDiv.scrollHeight;
         }
@@ -891,6 +916,154 @@
             return reasons[(input || "").trim()] || "";
         }
 
+        // ---------- 特定のメッセージへの返信 ----------
+        const REPLY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 8V4l-7 7 7 7v-4c5 0 8.5 1.6 11 5-1-5-4-10-11-11Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+
+        function replyAuthorName(message) {
+            if (message.from === myEmail) return "自分";
+            return localStorage.getItem("chatTargetName") || targetEmail;
+        }
+
+        function replySnippet(message) {
+            const text = String(message.text || "").replace(/\s+/g, " ").trim();
+            if (text) return text.slice(0, 120);
+            return Array.isArray(message.attachments) && message.attachments.length ? "画像" : "メッセージ";
+        }
+
+        // 引用の中身は毎回元のメッセージから作る（取り消されたら引用からも内容が消える）
+        function fillReplyContent(container, original) {
+            const body = document.createElement("span");
+            body.className = "reply-quote-body";
+            const name = document.createElement("strong");
+            const text = document.createElement("span");
+            if (!original) text.textContent = "元のメッセージは表示できません";
+            else if (original.isUnsent) text.textContent = "取り消されたメッセージ";
+            else {
+                name.textContent = replyAuthorName(original);
+                text.textContent = replySnippet(original);
+            }
+            if (name.textContent) body.appendChild(name);
+            body.appendChild(text);
+            container.appendChild(body);
+            const image = original && !original.isUnsent && Array.isArray(original.attachments) ? original.attachments.find(url => typeof url === "string" && url.startsWith("http")) : null;
+            if (image) {
+                const thumbnail = document.createElement("img");
+                thumbnail.src = getAttachmentDisplayUrl(image);
+                thumbnail.alt = "";
+                thumbnail.draggable = false;
+                container.appendChild(thumbnail);
+            }
+        }
+
+        function buildReplyQuote(replyTo) {
+            const original = messageById.get(String(replyTo));
+            const quote = document.createElement("button");
+            quote.type = "button";
+            quote.className = "reply-quote";
+            quote.setAttribute("data-no-busy", "");
+            fillReplyContent(quote, original);
+            if (original && !original.isUnsent) {
+                quote.title = "元のメッセージを表示";
+                quote.addEventListener("click", () => scrollToMessage(replyTo));
+            } else {
+                quote.disabled = true;
+            }
+            return quote;
+        }
+
+        function scrollToMessage(messageId) {
+            const list = document.getElementById("message-list");
+            const row = Array.from(list.querySelectorAll(".message-row")).find(item => item.dataset.messageId === String(messageId));
+            if (!row) return;
+            // 画面全体は動かさず、メッセージ欄の中だけを移動する
+            const offset = row.getBoundingClientRect().top - list.getBoundingClientRect().top;
+            list.scrollTo({ top: list.scrollTop + offset - (list.clientHeight - row.offsetHeight) / 2, behavior: "smooth" });
+            row.classList.remove("is-highlighted");
+            void row.offsetWidth;
+            row.classList.add("is-highlighted");
+            setTimeout(() => row.classList.remove("is-highlighted"), 1600);
+        }
+
+        function setReplyTarget(message, focusInput = true) {
+            replyTarget = message || null;
+            pendingSendRequestId = ""; // 返信先が変わったら、別の送信として扱う
+            const bar = document.getElementById("reply-bar");
+            const content = document.getElementById("reply-bar-content");
+            // 一番下を見ているときは、返信バーが出てもメッセージが隠れないようにする
+            const list = document.getElementById("message-list");
+            const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+            content.textContent = "";
+            bar.hidden = !replyTarget;
+            if (replyTarget) {
+                fillReplyContent(content, replyTarget);
+                const name = content.querySelector("strong");
+                if (name) name.textContent = `${replyAuthorName(replyTarget)}に返信`;
+            }
+            if (atBottom) list.scrollTop = list.scrollHeight;
+            if (!replyTarget) return;
+            if (focusInput) document.getElementById("message-input").focus({ preventScroll: true });
+        }
+
+        // スマホでは、メッセージを横にスワイプすると返信になる（縦のスクロールはそのまま）
+        function installSwipeReply(row, msg) {
+            const EDGE = 24;       // 画面の端から始まる操作は「戻る」などに使われるので扱わない
+            const START = 12;      // これより動いたら、縦か横かを決める
+            const TRIGGER = 56;    // ここまで引くと返信する
+            const LIMIT = 84;
+            let pointerId = null, startX = 0, startY = 0, distance = 0, swiping = false, armed = false, swipedAt = 0;
+            const indicator = document.createElement("span");
+            indicator.className = "swipe-reply-indicator";
+            indicator.innerHTML = REPLY_ICON;
+            indicator.setAttribute("aria-hidden", "true");
+            row.appendChild(indicator);
+
+            const reset = () => {
+                pointerId = null; swiping = false; armed = false; distance = 0;
+                row.classList.remove("is-swiping", "swipe-left", "swipe-right", "is-armed");
+                row.style.transform = "";
+                indicator.style.opacity = "";
+            };
+            row.addEventListener("pointerdown", event => {
+                if (event.pointerType === "mouse" || !event.isPrimary) return;
+                if (event.clientX < EDGE || event.clientX > window.innerWidth - EDGE) return;
+                pointerId = event.pointerId; startX = event.clientX; startY = event.clientY; swiping = false;
+            });
+            row.addEventListener("pointermove", event => {
+                if (event.pointerId !== pointerId) return;
+                const dx = event.clientX - startX, dy = event.clientY - startY;
+                if (!swiping) {
+                    if (Math.abs(dy) > START && Math.abs(dy) >= Math.abs(dx)) { pointerId = null; return; }
+                    if (Math.abs(dx) < START || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+                    swiping = true;
+                    row.classList.add("is-swiping");
+                    try { row.setPointerCapture(pointerId); } catch (error) { /* 取れなくても続ける */ }
+                }
+                distance = Math.sign(dx) * Math.min(LIMIT, Math.abs(dx) - START);
+                row.style.transform = `translateX(${distance}px)`;
+                row.classList.toggle("swipe-left", distance < 0);
+                row.classList.toggle("swipe-right", distance > 0);
+                indicator.style.opacity = String(Math.min(1, Math.abs(distance) / TRIGGER));
+                const nowArmed = Math.abs(distance) >= TRIGGER;
+                if (nowArmed && !armed && navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) navigator.vibrate(10);
+                armed = nowArmed;
+                row.classList.toggle("is-armed", armed);
+            });
+            row.addEventListener("pointerup", event => {
+                if (event.pointerId !== pointerId) return;
+                const reply = swiping && armed;
+                if (swiping) swipedAt = Date.now();
+                reset();
+                if (reply) setReplyTarget(msg);
+            });
+            row.addEventListener("pointercancel", event => { if (event.pointerId === pointerId) reset(); });
+            // 横に動かし始めたあとは、画面のスクロールや「戻る」に取られないようにする
+            row.addEventListener("touchmove", event => { if (swiping && event.cancelable) event.preventDefault(); }, { passive: false });
+            // 画像の上でスワイプしたときに、拡大表示が開かないようにする
+            row.addEventListener("click", event => {
+                if (Date.now() - swipedAt < 400) { event.preventDefault(); event.stopPropagation(); }
+            }, true);
+        }
+
         function closeMessageActionMenu() {
             if (openMessageActionMenu) openMessageActionMenu.remove();
             openMessageActionMenu = null;
@@ -922,6 +1095,7 @@
                 menu.appendChild(button);
             };
 
+            addAction("返信する", "↩", "", () => setReplyTarget(msg));
             if (msg.from === myEmail && !msg.isUnsent) {
                 addAction("送信を取り消す", "↶", "danger", () => unsendMessage(msg.messageId, null, msg));
             }
@@ -1334,6 +1508,10 @@
         }
 
         document.getElementById("block-user-btn").addEventListener("click", blockCurrentUser);
+        document.getElementById("reply-cancel").addEventListener("click", () => setReplyTarget(null));
+        document.addEventListener("keydown", event => {
+            if (event.key === "Escape" && replyTarget && !event.isComposing && !openMessageActionMenu) setReplyTarget(null, false);
+        });
         document.getElementById("report-user-btn").addEventListener("click", reportCurrentUser);
         document.getElementById("delete-history-btn").addEventListener("click", deleteChatHistory);
 
@@ -1408,6 +1586,8 @@
             if (!text && outgoingAttachments.length === 0) return;
             messageSendInProgress = true;
             if (!pendingSendRequestId) pendingSendRequestId = createRequestId();
+            const replying = replyTarget;
+            const replyTo = replying ? String(replying.messageId) : "";
 
             textInput.value = "";
             if (sendBtn) {
@@ -1418,6 +1598,15 @@
             const tempBubble = document.createElement("div");
             tempBubble.className = "message-bubble msg-my temp-msg";
             tempBubble.innerText = text || "画像を送信中...";
+            if (replying) {
+                const quote = document.createElement("div");
+                quote.className = "reply-quote is-temp";
+                fillReplyContent(quote, replying);
+                tempBubble.prepend(quote);
+            }
+            // 送った時点で返信の指定は外す（失敗したら戻す）
+            replyTarget = null;
+            document.getElementById("reply-bar").hidden = true;
             // 送信が終わるのを待たずに、選んだ画像をその場に表示する
             outgoingAttachments.forEach(attachment => {
                 const preview = document.createElement("img");
@@ -1431,10 +1620,10 @@
 
             try {
                 if (firebaseReady && outgoingAttachments.length === 0) {
-                    const firebaseSend = window.HeikoFirebaseChat.sendText(myEmail, targetEmail, pendingSendRequestId, text);
+                    const firebaseSend = window.HeikoFirebaseChat.sendText(myEmail, targetEmail, pendingSendRequestId, text, replyTo);
                     const firebaseTimeout = new Promise((resolve, reject) => setTimeout(() => reject(new Error("Firebaseの応答がありません")), 8000));
                     const storedMessageId = await Promise.race([firebaseSend, firebaseTimeout]);
-                    firebaseMessages = mergeMessages(firebaseMessages, [{ messageId: storedMessageId || pendingSendRequestId, from: myEmail, to: targetEmail, text: text, sentAt: Date.now(), isRead: false, isUnsent: false, storage: "firebase", attachments: [] }]);
+                    firebaseMessages = mergeMessages(firebaseMessages, [{ messageId: storedMessageId || pendingSendRequestId, from: myEmail, to: targetEmail, text: text, sentAt: Date.now(), isRead: false, isUnsent: false, storage: "firebase", attachments: [], replyTo }]);
                     renderMessages(mergeMessages(gasMessages, firebaseMessages));
                     postChat({ mode: "notifyFirebaseMessage", from: myEmail, to: targetEmail, text: text }).catch(error => console.warn("Firebase本文のLINE通知失敗", error));
                 } else {
@@ -1444,6 +1633,7 @@
                         to: targetEmail,
                         text: text,
                         requestId: pendingSendRequestId,
+                        replyTo,
                         attachments: outgoingAttachments
                     });
                 }
@@ -1454,9 +1644,10 @@
                 if (outgoingAttachments.length > 0 || !firebaseReady) await loadMessages();
             } catch (e) {
                 if (firebaseReady && outgoingAttachments.length === 0) {
-                    firebaseReady = false;
+                    // 返信だけが保存を断られた場合（Firebaseのルールが古い）は、ふつうの送信は Firebase のまま続ける
+                    if (!(replyTo && /permission/i.test(String(e.code || e.message)))) firebaseReady = false;
                     try {
-                        await postChat({ mode: "sendMessage", from: myEmail, to: targetEmail, text: text, requestId: pendingSendRequestId, attachments: [] });
+                        await postChat({ mode: "sendMessage", from: myEmail, to: targetEmail, text: text, requestId: pendingSendRequestId, replyTo, attachments: [] });
                         pendingSendRequestId = "";
                         tempBubble.remove();
                         await loadMessages();
@@ -1468,6 +1659,11 @@
                 alert("送信できませんでした: " + (e.message || "通信エラー"));
                 tempBubble.remove();
                 textInput.value = text;
+                if (replying && !replyTarget) {
+                    const keepRequestId = pendingSendRequestId;
+                    setReplyTarget(replying, false);
+                    pendingSendRequestId = keepRequestId;
+                }
             } finally {
                 messageSendInProgress = false;
                 if (sendBtn) {

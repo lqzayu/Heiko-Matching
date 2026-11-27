@@ -7,6 +7,12 @@ const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getPropert
 
 const ADMIN_USER_ID = "admin";
 const WEB_PUSH_SHEET = "Web通知";
+// クイックリアクションはチャットとは別に保存し、プッシュ通知やLINEは送らない
+const REACTION_SHEET = "リアクション";
+const REACTION_HEADERS = ["リアクションID", "送信者", "受信者", "内容", "日時", "状態"];
+const REACTION_TYPES = ["気になる！", "一緒に勉強したい！", "質問したい！"];
+const REACTION_SHOW_DAYS = 7;   // 受け取った人の画面に表示する日数
+const REACTION_KEEP_DAYS = 30;  // これより古い記録は消していく
 const RECRUITMENT_DURATION_MINUTES = [15, 30, 45, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900, 960, 1020, 1080, 1140, 1200, 1260, 1320, 1380, 1440];
 const ONLINE_TIMEOUT_MS = 90 * 1000;
 const AI_DAILY_LIMIT = 5;
@@ -1156,6 +1162,46 @@ function doPost(e) {
       return createRes("success", "NOT_FOUND");
     }
 
+    if (mode === "sendReaction") {
+      const fromUser = cleanCell(data.from);
+      const toUser = cleanCell(data.to);
+      const reaction = cleanCell(data.reaction);
+      if (!fromUser || !toUser || fromUser === toUser || !REACTION_TYPES.includes(reaction)) return createRes("error", "リアクションを確認できませんでした");
+      const userRows = sheetUser && sheetUser.getLastRow() > 1 ? sheetUser.getDataRange().getValues() : [];
+      if (!findUserRow(userRows, toUser)) return createRes("error", "相手が見つかりません");
+      if (isBlockedBetween(sheetBlock, fromUser, toUser)) return createRes("error", "ブロック中の相手には送信できません");
+      if (!claimCooldown("reaction-" + base64UrlEncode(fromUser + "\n" + toUser + "\n" + reaction), 600)) return createRes("error", "同じリアクションは、少し時間をおいてから送れます");
+      if (!saveReaction(ss, fromUser, toUser, reaction)) return createRes("error", "混み合っています。数秒後にもう一度お試しください");
+      return createRes("success", "REACTION_SENT");
+    }
+
+    if (mode === "getReactions") {
+      const myEmail = cleanCell(data.email);
+      const userRows = sheetUser && sheetUser.getLastRow() > 1 ? sheetUser.getDataRange().getValues() : [];
+      const items = readReceivedReactions(ss, myEmail, getBlockedPartnerIds(sheetBlock, myEmail))
+        .map(item => {
+          const row = findUserRow(userRows, item.from);
+          if (!row) return null; // 退会したユーザーの分は出さない
+          return { id: item.id, from: item.from, fromName: getUserDisplayName(row, item.from), profileImage: getPublicProfileImage(row), reaction: item.reaction, time: item.time, unread: item.unread };
+        })
+        .filter(Boolean)
+        .slice(0, 30);
+      return createRes("success", items);
+    }
+
+    if (mode === "markReactionsRead") {
+      const myEmail = cleanCell(data.email);
+      const ids = new Set((Array.isArray(data.ids) ? data.ids : []).map(cleanCell).filter(Boolean).slice(0, 50));
+      const reactionSheet = ss.getSheetByName(REACTION_SHEET);
+      if (reactionSheet && reactionSheet.getLastRow() > 1 && ids.size > 0) {
+        const rows = reactionSheet.getRange(2, 1, reactionSheet.getLastRow() - 1, REACTION_HEADERS.length).getValues();
+        rows.forEach((row, index) => {
+          if (ids.has(cleanCell(row[0])) && cleanCell(row[2]) === myEmail && row[5] === "unread") reactionSheet.getRange(index + 2, 6).setValue("read");
+        });
+      }
+      return createRes("success", "REACTIONS_READ");
+    }
+
     if (mode === "notifyFirebaseMessage") {
       const fromUser = cleanCell(data.from);
       const toUser = cleanCell(data.to);
@@ -1178,6 +1224,8 @@ function doPost(e) {
       const toUser = cleanCell(data.to);
       const messageText = cleanCell(data.text);
       const requestId = cleanCell(data.requestId).slice(0, 100);
+      // 返信先は相手のメッセージIDだけを保存し、引用の中身は画面側で元のメッセージから作る
+      const replyTo = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(cleanCell(data.replyTo)) ? cleanCell(data.replyTo) : "";
       if (!fromUser || !toUser || fromUser === toUser) return createRes("error", "送信先が正しくありません");
       if (!requestId || !/^[A-Za-z0-9._:-]+$/.test(requestId)) return createRes("error", "送信情報を確認できませんでした。ページを再読み込みしてください");
       if (messageText.length > 2000) return createRes("error", "メッセージは2000文字以内で入力してください");
@@ -1228,7 +1276,7 @@ function doPost(e) {
 
         const now = new Date();
         const messageId = requestId;
-        const rowData = [fromUser, toUser, safeSheetText(messageText, 2000), now, "unread", messageId, "active", JSON.stringify(attachmentUrls)];
+        const rowData = [fromUser, toUser, safeSheetText(messageText, 2000), now, "unread", messageId, "active", JSON.stringify(attachmentUrls), replyTo];
 
         appendChatRow(sheetChat, rowData);
 
@@ -1291,7 +1339,8 @@ function doPost(e) {
             sentAt: rows[i][3],
             isRead: rows[i][4] === "read",
             isUnsent: rows[i][6] === "unsent",
-            attachments
+            attachments,
+            replyTo: cleanCell(rows[i][8])
           });
         }
       }
@@ -1655,8 +1704,9 @@ function doPost(e) {
     }
 
     if (mode === "getNotificationSummary") {
+      const reactions = summarizeReactions(ss, cleanCell(data.email), sheetBlock, sheetUser);
       if (!sheetChat || sheetChat.getLastRow() <= 1) {
-        return createRes("success", { unreadCount: 0, latestIncoming: null });
+        return createRes("success", { unreadCount: 0, latestIncoming: null, reactions: reactions });
       }
 
       const rows = getChatRows(sheetChat);
@@ -1691,7 +1741,8 @@ function doPost(e) {
 
       return createRes("success", {
         unreadCount: unreadCount,
-        latestIncoming: latestIncoming
+        latestIncoming: latestIncoming,
+        reactions: reactions
       });
     }
 
@@ -2658,6 +2709,9 @@ function getRequestActorId(mode, data) {
     postRecruitment: "email",
     deleteRecruitment: "email",
     sendMessage: "from",
+    sendReaction: "from",
+    getReactions: "email",
+    markReactionsRead: "email",
     notifyFirebaseMessage: "from",
     getMessages: "user1",
     unsendMessage: "userId",
@@ -3116,10 +3170,12 @@ function ensureRecruitmentDurationColumn(sheetRecruit) {
 }
 
 function ensureChatColumns(sheetChat) {
+  if (sheetChat.getMaxColumns() < 9) sheetChat.insertColumnsAfter(sheetChat.getMaxColumns(), 9 - sheetChat.getMaxColumns());
   if (sheetChat.getLastRow() === 0) {
-    sheetChat.getRange(1, 1, 1, 8).setValues([["送信元", "送信先", "内容", "日時", "既読", "メッセージID", "状態", "添付JSON"]]);
+    sheetChat.getRange(1, 1, 1, 9).setValues([["送信元", "送信先", "内容", "日時", "既読", "メッセージID", "状態", "添付JSON", "返信先"]]);
     return;
   }
+  if (!sheetChat.getRange(1, 9).getValue()) sheetChat.getRange(1, 9).setValue("返信先");
 
   if (!sheetChat.getRange(1, 6).getValue()) sheetChat.getRange(1, 6).setValue("メッセージID");
   if (!sheetChat.getRange(1, 7).getValue()) sheetChat.getRange(1, 7).setValue("状態");
@@ -3133,7 +3189,7 @@ function appendChatRow(sheetChat, rowData) {
 
 function getChatRows(sheetChat) {
   const lastRow = sheetChat.getLastRow();
-  return lastRow > 0 ? sheetChat.getRange(1, 1, lastRow, 8).getValues() : [];
+  return lastRow > 0 ? sheetChat.getRange(1, 1, lastRow, Math.min(9, sheetChat.getMaxColumns())).getValues() : [];
 }
 
 function chatMessageExists(sheetChat, senderId, messageId) {
@@ -3579,6 +3635,54 @@ function getFcmAccessToken(account, cacheKey) {
     console.error("FCMアクセストークン取得エラー", error);
     return "";
   }
+}
+
+// ===== クイックリアクション =====
+// 同じ人が同じ相手に同じリアクションを送り直した場合は、行を増やさず日時を新しくする
+function saveReaction(ss, fromUser, toUser, reaction) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return false;
+  try {
+    const sheet = getOrCreateSheet(ss, REACTION_SHEET, REACTION_HEADERS);
+    const now = new Date();
+    const count = sheet.getLastRow() - 1;
+    if (count > 0) {
+      const rows = sheet.getRange(2, 1, count, REACTION_HEADERS.length).getValues();
+      const index = rows.findIndex(row => cleanCell(row[1]) === fromUser && cleanCell(row[2]) === toUser && cleanCell(row[3]) === reaction);
+      if (index >= 0) {
+        sheet.getRange(index + 2, 5, 1, 2).setValues([[now, "unread"]]);
+        return true;
+      }
+      if (now.getTime() - new Date(rows[0][4]).getTime() > REACTION_KEEP_DAYS * 86400000) sheet.deleteRow(2);
+    }
+    sheet.appendRow([Utilities.getUuid(), safeSheetText(fromUser, 128), safeSheetText(toUser, 128), reaction, now, "unread"]);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 受け取ったリアクションを新しい順に返す
+function readReceivedReactions(ss, userId, blockedPartners) {
+  const sheet = ss.getSheetByName(REACTION_SHEET);
+  if (!userId || !sheet || sheet.getLastRow() <= 1) return [];
+  const oldest = Date.now() - REACTION_SHOW_DAYS * 86400000;
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, REACTION_HEADERS.length).getValues()
+    .filter(row => cleanCell(row[2]) === userId && !blockedPartners.has(cleanCell(row[1])))
+    .map(row => ({ id: cleanCell(row[0]), from: cleanCell(row[1]), reaction: cleanCell(row[3]), time: new Date(row[4]).getTime(), unread: row[5] === "unread" }))
+    .filter(item => item.time >= oldest)
+    .sort((a, b) => b.time - a.time);
+}
+
+function summarizeReactions(ss, userId, sheetBlock, sheetUser) {
+  const items = readReceivedReactions(ss, userId, getBlockedPartnerIds(sheetBlock, userId));
+  const latest = items.find(item => item.unread);
+  let latestUnread = null;
+  if (latest) {
+    const userRows = sheetUser && sheetUser.getLastRow() > 0 ? sheetUser.getDataRange().getValues() : [];
+    latestUnread = { fromName: getUserDisplayName(findUserRow(userRows, latest.from), latest.from), reaction: latest.reaction, time: latest.time };
+  }
+  return { unread: items.filter(item => item.unread).length, latestTime: items.length ? items[0].time : 0, latest: latestUnread };
 }
 
 // ===== ブラウザ（スマホのホーム画面に追加したサイトを含む）へのプッシュ通知 =====

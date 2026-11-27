@@ -1,4 +1,4 @@
-# Firebase Realtime Database ルールの検証（T1〜T6）
+# Firebase Realtime Database ルールの検証（T1〜T7）
 
 Firebase コンソールのルールシミュレータと同じ判定（`.read`/`.write` の継承、`.validate`、`$変数`、複数パス更新）を再現した簡易シミュレータで、チャット機能のルールを検証します。書き込みのパターンは `firebase-chat.js` の送信・既読・送信取り消し・非表示と同じ形にしています。
 
@@ -14,5 +14,6 @@ deno run --allow-read tests/firebase-rules/rules_test.js firebase-database.rules
 | T4 | 受信者は既読にできるが、本文の改ざんや取り消しの偽装はできない |
 | T5 | 送信者だけが送信取り消しできる。宛先は書き換えられない |
 | T6 | 非表示リストは本人だけが書ける。会話や受信箱は削除できない |
+| T7 | 返信（replyTo）を送れる。返信先は後から書き換えられない |
 
 ※ 本番に反映する前に、Firebase コンソールのルールシミュレータでも主要なケースを確認してください。

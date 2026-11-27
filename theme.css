@@ -1760,3 +1760,90 @@ html body .hs-panel input.hs-search { flex:0 0 auto; width:100%; min-height:40px
 /* 横に並べる場所では、幅を中身に合わせる */
 [data-page="admin"] :is(.se-year, .report-status-cell, .col-action, .table-school-events td) > .hs { display:inline-block; width:auto; min-width:128px; vertical-align:middle; }
 @media (prefers-reduced-motion: reduce) { .hs-panel.is-in { animation:none; } .hs-trigger::after { transition:none; } }
+
+/* ===== 届いたリアクション（ホーム画面） ===== */
+.reaction-box { width:100%; box-sizing:border-box; padding:18px; border:1px solid var(--ui-line); border-radius:16px; text-align:left; }
+.reaction-box[hidden] { display:none; }
+.main-content > .reaction-box { margin:0 0 20px; }
+.reaction-box h4 { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; margin:0 0 10px; font-size:13px; font-weight:800; color:var(--ui-green); }
+.reaction-box h4 small { font-size:11px; font-weight:500; color:var(--ui-muted); }
+.reaction-box ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.reaction-item { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--ui-line); border-radius:12px; }
+.reaction-item.is-new { border-color:var(--ui-green); background:var(--ui-soft); }
+.reaction-item .user-card-avatar { flex:0 0 auto; }
+.reaction-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; color:var(--ui-ink); font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
+.reaction-text small { font-size:11px; color:var(--ui-muted); }
+html body .reaction-box button.reaction-chat, html body .reaction-box button.reaction-more { flex:0 0 auto; min-height:34px; margin:0; padding:6px 12px; border:1px solid var(--ui-line); border-radius:9px; background:var(--ui-paper); color:var(--ui-green); font-size:12px; font-weight:800; cursor:pointer; }
+html body .reaction-box button.reaction-more { width:100%; margin-top:8px; }
+html body .reaction-box button.reaction-more[hidden] { display:none; }
+/* 左の列は幅が狭いので、ボタンは文の下に置く */
+.sidebar .reaction-item { display:grid; grid-template-columns:36px minmax(0,1fr); align-items:start; column-gap:10px; row-gap:6px; }
+.sidebar .reaction-item .user-card-avatar { width:36px; height:36px; font-size:15px; }
+html body .sidebar .reaction-box button.reaction-chat { grid-column:2; justify-self:start; }
+
+/* ===== ホーム上部の2列（縦長の画面：左に学校行事、右に自分の募集） ===== */
+.home-top:empty { display:none; }
+.narrow-only { display:none!important; }
+.my-post-status { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:8px; }
+.my-post-live { padding:2px 8px; border-radius:999px; background:#16a34a; color:#ffffff; font-size:11px; font-weight:800; }
+.my-post-status .countdown-badge { position:static; margin:0; }
+@media (max-width: 768px) {
+ .wide-only { display:none!important; }
+ span.narrow-only { display:inline!important; }
+ button.narrow-only { display:block!important; }
+ [data-page="main"] #home-top { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:stretch; margin:0 0 16px; }
+ [data-page="main"] #home-top > * { min-width:0; box-sizing:border-box; }
+ [data-page="main"] #home-top > #school-events-strip { margin:0; padding:12px 10px; border-radius:16px; }
+ [data-page="main"] #home-top > #my-post-area { width:100%!important; margin:0!important; padding:12px 10px!important; border-radius:16px!important; }
+ body.is-recruit-tab[data-page="main"] #home-top { grid-template-columns:minmax(0,1fr); }
+ #home-top .se-strip-head { flex-direction:column; align-items:flex-start; gap:2px; margin-bottom:8px; }
+ #home-top .se-strip-head h2, [data-page="main"] #home-top #my-post-area h4 { font-size:13px!important; margin:0!important; }
+ [data-page="main"] #home-top #my-post-area h4 { margin-bottom:8px!important; }
+ #home-top .se-strip-link { font-size:11.5px; }
+ [data-page="main"] #home-top .se-strip-list { display:flex; flex-direction:column; gap:6px; overflow:visible; padding:0; }
+ [data-page="main"] #home-top .se-strip-item { flex:0 0 auto; }
+ #home-top .se-strip-item a { height:auto; padding:6px 8px; border-radius:9px; }
+ #home-top .se-strip-date { flex-wrap:wrap; gap:4px; font-size:11px; }
+ #home-top .se-strip-when { font-size:10px; }
+ #home-top .se-strip-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; font-size:12.5px; }
+ #home-top .se-strip-more { margin:6px 0 0; font-size:11.5px; }
+ #home-top #my-post-content { font-size:12px!important; overflow-wrap:anywhere; }
+ #home-top .my-post-text { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden; font-size:12.5px!important; }
+ #home-top .card-tags { gap:4px; }
+ #home-top .tag-badge { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10.5px; }
+ #home-top .my-post-status .countdown-badge { padding:2px 6px; font-size:10.5px; }
+ html body #home-top button.my-post-create { width:100%; margin:10px 0 0; padding:9px 4px; border:1px solid var(--ui-green); border-radius:10px; background:var(--ui-soft); color:var(--ui-green); font-size:12px; font-weight:800; cursor:pointer; }
+}
+.my-post-text { color:var(--ui-ink)!important; }
+
+/* ===== チャット：特定のメッセージへの返信 ===== */
+.chat-messages { overflow-x:hidden; }
+.message-row { position:relative; border-radius:14px; touch-action:pan-y pinch-zoom; }
+.message-row:not(.is-swiping) { transition:transform .22s cubic-bezier(.22,1,.36,1); }
+.message-row img { -webkit-user-drag:none; }
+.message-row.is-highlighted { animation:reply-flash 1.6s ease; }
+@keyframes reply-flash { 0%, 55% { background:color-mix(in srgb, var(--ui-green) 22%, transparent); } 100% { background:transparent; } }
+.swipe-reply-indicator { position:absolute; top:50%; width:34px; height:34px; margin-top:-17px; display:grid; place-items:center; border-radius:50%; background:var(--ui-soft); color:var(--ui-green); opacity:0; pointer-events:none; }
+.swipe-reply-indicator svg { width:19px; height:19px; }
+.message-row:not(.is-swiping) .swipe-reply-indicator { visibility:hidden; }
+.message-row.swipe-left .swipe-reply-indicator { right:-44px; }
+.message-row.swipe-right .swipe-reply-indicator { left:-44px; }
+.message-row.is-armed .swipe-reply-indicator { background:var(--ui-green); color:var(--ui-paper); transform:scale(1.12); }
+html body button.message-reply-button { display:grid; place-items:center; width:32px; min-width:32px; height:28px; min-height:28px; margin:0; padding:0; border:0; border-radius:999px; background:var(--ui-soft); color:var(--ui-muted); box-shadow:none; cursor:pointer; }
+html body button.message-reply-button:hover, html body button.message-reply-button:focus-visible { color:var(--ui-green); }
+.message-reply-button svg { width:16px; height:16px; }
+/* 指で操作する画面はスワイプで返信するので、アイコンは出さない（長押しのメニューからも返信できる） */
+@media (hover:none) and (pointer:coarse) { html body button.message-reply-button { display:none; } }
+html body button.reply-quote, .reply-quote.is-temp { display:flex; align-items:center; gap:8px; max-width:min(70%, 420px); margin:0 0 -2px; padding:6px 10px; border:0; border-left:3px solid var(--ui-green); border-radius:8px; background:var(--ui-soft); color:var(--ui-ink); box-shadow:none; text-align:left; font:inherit; font-size:12px; line-height:1.45; cursor:pointer; }
+html body button.reply-quote:disabled { cursor:default; opacity:.75; }
+.reply-quote.is-temp { max-width:100%; margin:0 0 6px; }
+.reply-quote-body { display:flex; flex-direction:column; min-width:0; }
+.reply-quote-body strong { font-size:11px; color:var(--ui-green); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reply-quote-body span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; color:var(--ui-muted); }
+:is(.reply-quote, .reply-bar-content) img { flex:0 0 auto; width:36px; height:36px; border-radius:6px; object-fit:cover; }
+.reply-bar { display:flex; align-items:center; gap:10px; margin:0 0 8px; padding:8px 8px 8px 12px; border-left:4px solid var(--ui-green); border-radius:10px; background:var(--ui-soft); color:var(--ui-ink); font-size:13px; }
+.reply-bar[hidden] { display:none; }
+.reply-bar-content { flex:1; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.reply-bar-content .reply-quote-body span { -webkit-line-clamp:1; }
+html body button.reply-cancel { flex:0 0 auto; width:34px; height:34px; min-height:34px; margin:0; padding:0; border:0; border-radius:50%; background:transparent; color:var(--ui-muted); box-shadow:none; font-size:20px; cursor:pointer; }
+@media (prefers-reduced-motion:reduce) { .message-row:not(.is-swiping) { transition:none; } .message-row.is-highlighted { animation:none; background:var(--ui-soft); } }

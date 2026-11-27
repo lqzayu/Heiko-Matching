@@ -87,6 +87,7 @@
             sentAt: Number(value.sentAt || 0),
             isRead: value.isRead === true,
             isUnsent: value.isUnsent === true,
+            replyTo: String(value.replyTo || ""),
             storage: "firebase",
             attachments: []
         };
@@ -130,7 +131,7 @@
         };
     }
 
-    async function sendText(firstUser, secondUser, messageId, text) {
+    async function sendText(firstUser, secondUser, messageId, text, replyTo) {
         const database = getDatabase();
         const auth = getAuth();
         if (!database || !auth || !auth.currentUser || auth.currentUser.uid !== getFirebaseUid(firstUser)) {
@@ -155,7 +156,8 @@
             const isSameRetry = String(existing.messageId || "") === requestedMessageId &&
                 String(existing.fromUid || "") === fromUid &&
                 String(existing.toUid || "") === toUid &&
-                String(existing.text || "") === safeText;
+                String(existing.text || "") === safeText &&
+                String(existing.replyTo || "") === String(replyTo || "");
             if (isSameRetry) return requestedMessageId;
             storedMessageId = createCollisionMessageId(requestedMessageId);
             messageKey = encodeKey(storedMessageId);
@@ -172,6 +174,7 @@
             isRead: false,
             isUnsent: false
         };
+        if (replyTo) value.replyTo = String(replyTo).slice(0, 128);
         const updates = {}; // 一括保存する更新内容を用意します。
         updates[getConversationPath(firstUser, secondUser) + "/" + messageKey] = value; // 会話本体を更新対象へ追加します。
         updates["inbox/" + fromUid + "/" + messageKey] = value; // 送信者の一覧を更新対象へ追加します。
