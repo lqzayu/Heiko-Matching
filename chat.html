@@ -637,6 +637,22 @@
         }
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyQgkizdGw9MiZjxtlxAHpfMXw5ehLfj9HkzDcR9YLRo1Cm11kfEp4cWYqnNBdDR96w/exec";
 
+        // プッシュ通知から開いたときは chat.html#from=相手のID で届く（# より後ろはサーバーに送られない）
+        (function openChatFromLink() {
+            const match = location.hash.match(/^#from=([^&]+)$/);
+            if (!match) return;
+            history.replaceState(null, "", location.href.split("#")[0]);
+            let from = "";
+            try { from = decodeURIComponent(match[1]).trim(); } catch (error) { return; }
+            if (!from || from.length > 64 || from === localStorage.getItem("userEmail")) return;
+            if (localStorage.getItem("chatTarget") !== from) localStorage.removeItem("chatTargetName");
+            localStorage.setItem("chatTarget", from);
+        })();
+        // チャットを開いたまま別の通知を押すと # だけが変わるので、読み込み直して相手を切り替える
+        window.addEventListener("hashchange", () => {
+            if (location.hash.startsWith("#from=")) location.reload();
+        });
+
         const myEmail = localStorage.getItem("userEmail");
         const targetEmail = localStorage.getItem("chatTarget");
         let messagesRequest = null;
@@ -827,10 +843,26 @@
             else location.href = "messages.html";
         });
 
-        document.getElementById("chat-title").innerText = targetName && targetName !== targetEmail
-            ? `💬 ${targetName}（${targetEmail}）`
-            : `💬 対話相手: ${targetEmail}`;
-        if (targetName) document.title = `${targetName}とのチャット - 平工マッチング`;
+        function showChatTarget(name) {
+            document.getElementById("chat-title").innerText = name && name !== targetEmail
+                ? `💬 ${name}（${targetEmail}）`
+                : `💬 対話相手: ${targetEmail}`;
+            if (!name) return;
+            const unread = (document.title.match(/^\(\d+\+?\) /) || [""])[0];
+            document.title = `${unread}${name}とのチャット - 平工マッチング`;
+        }
+        showChatTarget(targetName);
+        // 通知から開いたときなど、相手の名前がまだ分からない場合は取得する
+        if (!targetName && myEmail && targetEmail) {
+            postChat({ mode: "getUserProfiles", userId: myEmail, targetUserIds: [targetEmail] })
+                .then(result => {
+                    const profile = Array.isArray(result.message) ? result.message[0] : null;
+                    if (!profile || !profile.name || localStorage.getItem("chatTarget") !== targetEmail) return;
+                    localStorage.setItem("chatTargetName", profile.name);
+                    showChatTarget(profile.name);
+                })
+                .catch(error => console.warn("相手の名前を取得できませんでした", error));
+        }
 
         function getReportReason() {
             const input = prompt(

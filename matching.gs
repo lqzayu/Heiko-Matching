@@ -3616,7 +3616,7 @@ function sendWebPushNotification(ss, toUserId, fromUserId, senderName) {
     const content = {
       title: "平工マッチング",
       body: (cleanCell(senderName) || "ほかのユーザー").slice(0, 60) + " さんからメッセージが届きました",
-      url: "messages.html",
+      url: "chat.html#from=" + encodeURIComponent(cleanCell(fromUserId)),
       tag: "chat-" + base64UrlEncode(cleanCell(fromUserId)).slice(0, 80)
     };
     targets.slice(-5).forEach(row => {
