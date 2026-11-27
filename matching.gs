@@ -7,6 +7,21 @@ const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getPropert
 
 const ADMIN_USER_ID = "admin";
 const WEB_PUSH_SHEET = "Web通知";
+// 削除したアカウントのIDは二度と登録させない（同じIDの別の人に、前の人の会話などが見えないようにする）
+const RETIRED_ID_SHEET = "削除済みID";
+const RETIRED_ID_HEADERS = ["IDの照合値", "記録日時", "状態"];
+const UNAVAILABLE_ID_MESSAGE = "このユーザーIDは使用できません。別のIDを選んでください";
+// アカウント削除で消す記録：シート名と、ユーザーIDが入る列（0から数える）。
+// 通報・問い合わせ・chat-copy は、嫌がらせなどの確認に使う記録なので残す
+const USER_DATA_SHEETS = [
+  ["募集", [5]], ["チャット", [0, 1]], ["チャット非表示", [0, 1]], ["ブロック", [0, 1]], ["AIログ", [2]], ["JM計算", [0]],
+  ["リアクション", [1, 2]], ["LINE連携", [0]], ["オンライン状況", [0]], ["Web通知", [0]], ["Android通知", [0]], ["Android通知ログ", [1]]
+];
+// ここにIDが残っていれば、以前だれかが使ったIDとみなす
+const USED_ID_TRACE_SHEETS = [
+  ["チャット", [0, 1]], ["chat-copy", [0, 1]], ["チャット非表示", [0, 1]], ["ブロック", [0, 1]], ["AIログ", [2]],
+  ["JM計算", [0]], ["リアクション", [1, 2]], ["LINE連携", [0]], ["通報", [1, 2]]
+];
 // クイックリアクションはチャットとは別に保存し、プッシュ通知やLINEは送らない
 const REACTION_SHEET = "リアクション";
 const REACTION_HEADERS = ["リアクションID", "送信者", "受信者", "内容", "日時", "状態"];
@@ -775,6 +790,7 @@ function doPost(e) {
         if (cleanCell(rows[i][5]).toLowerCase() === registerEmail && savedUserId !== registerUserId) return createRes("error", "このメールアドレスは既に使用されています");
       }
 
+      if (existingRowIndex === -1 && (isRetiredUserId(ss, registerUserId) || hasPastUserData(ss, registerUserId))) return createRes("error", UNAVAILABLE_ID_MESSAGE);
       if (existingRowIndex !== -1 && isBannedUserRow(rows[existingRowIndex - 1])) return createRes("error", "このユーザーIDは使用できません");
       if (existingRowIndex !== -1 && rows[existingRowIndex - 1][6] === true) {
         return createRes("error", "このユーザーIDは既に登録されています");
@@ -822,6 +838,8 @@ function doPost(e) {
             return createRes("error", "このユーザーIDは既に使われています。大文字と小文字の違いは区別されません");
           }
         }
+        // 確認している間にアカウントが削除された場合にも備えて、保存の直前にもう一度確かめる
+        if (latestExistingRowIndex === -1 && isRetiredUserId(ss, registerUserId)) return createRes("error", UNAVAILABLE_ID_MESSAGE);
         if (latestExistingRowIndex !== -1 && isBannedUserRow(latestRows[latestExistingRowIndex - 1])) return createRes("error", "このユーザーIDは使用できません");
         if (latestExistingRowIndex !== -1 && latestRows[latestExistingRowIndex - 1][6] === true) {
           return createRes("error", "このユーザーIDは既に登録されています");
@@ -988,6 +1006,8 @@ function doPost(e) {
       const userRow = faceRowIndex >= 0 ? rows[faceRowIndex] : null;
 
       if (!userRow) return createRes("error", "ユーザーIDが見つかりません。");
+      // 顔認証は本人がカメラの前にいることまでは確かめられないため、全員の情報を扱える管理者には使わせない
+      if (cleanCell(userRow[0]) === ADMIN_USER_ID) return createRes("error", "管理者アカウントは顔認証を使えません。パスワードでログインしてください");
       if (userRow[6] !== true) return createRes("error", isBannedUserRow(userRow) ? USER_BANNED_MESSAGE : "メール認証が完了していません。");
       if (!userRow[3]) return createRes("error", "このユーザーには顔情報が登録されていません。");
 
@@ -1027,7 +1047,6 @@ function doPost(e) {
         };
         clearAttemptFailures(faceAttemptKey);
         faceLoginResult.sessionToken = createUserSessionToken(cleanCell(userRow[0]), cleanCell(userRow[12]));
-        if (cleanCell(userRow[0]) === ADMIN_USER_ID) faceLoginResult.adminToken = createAdminSessionToken();
         return createRes("success", faceLoginResult);
       } catch (e) {
         recordAttemptFailure(faceAttemptKey, faceAttempts, 600);
@@ -1082,6 +1101,7 @@ function doPost(e) {
 
     if (mode === "updateFaceFeatures") {
       const email = data.email;
+      if (normalizeUserId(email) === ADMIN_USER_ID) return createRes("error", "管理者アカウントには顔認証を登録できません");
       const faceFeatures = data.faceFeatures;
       if (!sheetUser || sheetUser.getLastRow() === 0) return createRes("error", "ユーザーが見つかりません");
       const rows = sheetUser.getDataRange().getValues();
@@ -1408,12 +1428,14 @@ function doPost(e) {
 
       if (targetRowIndex === -1) return createRes("error", "取り消せるメッセージが見つかりません");
 
+      const unsentAttachments = parseAttachmentCell(rows[targetRowIndex - 1][7]);
       sheetChat.getRange(targetRowIndex, 3).setValue("このメッセージは送信取り消しされました。");
       if (!sheetChat.getRange(targetRowIndex, 6).getValue()) {
         sheetChat.getRange(targetRowIndex, 6).setValue(messageId);
       }
       sheetChat.getRange(targetRowIndex, 7).setValue("unsent");
       sheetChat.getRange(targetRowIndex, 8).setValue("[]");
+      deleteChatAttachmentUrls(unsentAttachments); // 画面から消すだけでなく、Driveの画像も削除する
       return createRes("success", "MESSAGE_UNSENT");
     }
 
@@ -1802,37 +1824,47 @@ function doPost(e) {
     }
 
     if (mode === "deleteAccount") {
-      const email = data.email;
-      if (cleanCell(email) === ADMIN_USER_ID) return createRes("error", "管理者アカウントは削除できません");
+      const email = cleanCell(data.email);
+      if (email === ADMIN_USER_ID) return createRes("error", "管理者アカウントは削除できません");
       if (!sheetUser || sheetUser.getLastRow() <= 1) return createRes("error", "ユーザーが見つかりません");
 
-      const rows = sheetUser.getDataRange().getValues();
-      let userDeleted = false;
-
-      for (let i = rows.length - 1; i >= 1; i--) {
-        if (rows[i][0] === email || rows[i][5] === email) {
-          sheetUser.deleteRow(i + 1);
-          userDeleted = true;
-          break;
+      const deleteLock = LockService.getScriptLock();
+      if (!deleteLock.tryLock(20000)) return createRes("error", "処理が混み合っています。少し待ってからもう一度お試しください");
+      let userId = "";
+      let attachments = [];
+      let incomplete = false;
+      try {
+        const rows = sheetUser.getDataRange().getValues();
+        const index = rows.findIndex((row, i) => i > 0 && (cleanCell(row[0]) === email || cleanCell(row[5]) === email));
+        if (index < 1) return createRes("error", "対象ユーザーが見つかりませんでした");
+        userId = cleanCell(rows[index][0]);
+        if (userId === ADMIN_USER_ID) return createRes("error", "管理者アカウントは削除できません");
+        // 最初にIDを使えなくする。このあとの削除が途中で失敗しても、別の人が同じIDを使うことはない
+        retireUserId(ss, userId, "削除");
+        sheetUser.deleteRow(index + 1);
+        CacheService.getScriptCache().put("revoked-user-" + userId, "1", 21600);
+        try {
+          attachments = removeUserSheetData(ss, userId);
+        } catch (error) {
+          incomplete = true;
+          console.error("削除したアカウントの記録を消せませんでした", error);
         }
+      } finally {
+        if (deleteLock.hasLock()) deleteLock.releaseLock();
       }
 
-      if (sheetRecruit && sheetRecruit.getLastRow() > 1) {
-        const recruitRows = sheetRecruit.getDataRange().getValues();
-        for (let j = recruitRows.length - 1; j >= 1; j--) {
-          if (recruitRows[j][5] === email) {
-            sheetRecruit.deleteRow(j + 1);
-          }
-        }
+      if (deleteChatAttachmentUrls(attachments) < attachments.length) incomplete = true;
+      try {
+        deleteFirebaseUserData(userId);
+      } catch (error) {
+        incomplete = true;
+        console.error("削除したアカウントのFirebaseの会話を消せませんでした", error);
       }
-
-      if (userDeleted) {
-        revokeAllWebPushTokens(ss, cleanCell(email));
-        CacheService.getScriptCache().put("revoked-user-" + cleanCell(email), "1", Math.floor(USER_SESSION_DURATION_MS / 1000));
-        return createRes("success", "ACCOUNT_DELETED");
-      } else {
-        return createRes("error", "対象ユーザーが見つかりませんでした");
+      if (incomplete) {
+        // 管理者があとで確認できるように記録する
+        getOrCreateSheet(ss, RETIRED_ID_SHEET, RETIRED_ID_HEADERS).appendRow([retiredIdKey(userId), new Date(), "一部のデータを消せませんでした（実行ログを確認）"]);
       }
+      return createRes("success", "ACCOUNT_DELETED");
     }
 
     // ユーザID・パスワードを忘れたとき：登録したメールアドレスを入力すると、
@@ -2848,7 +2880,7 @@ function clearFirebaseChatData() {
 
 function getFirebaseDatabaseAccessToken(account) {
   const cache = CacheService.getScriptCache();
-  const cacheKey = "firebase-database-access-token";
+  const cacheKey = ("firebase-database-access-token-" + account.clientEmail).slice(0, 240);
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
@@ -2857,7 +2889,7 @@ function getFirebaseDatabaseAccessToken(account) {
     const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
     const claim = base64UrlEncode(JSON.stringify({
       iss: account.clientEmail,
-      scope: "https://www.googleapis.com/auth/firebase.database",
+      scope: "https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email",
       aud: "https://oauth2.googleapis.com/token",
       iat: issuedAt,
       exp: issuedAt + 3600
@@ -3330,15 +3362,33 @@ function saveChatAttachments(attachments, senderId) {
   return savedUrls;
 }
 
+function parseAttachmentCell(value) {
+  try {
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+// 画像を削除し、消せた数を返す。ゴミ箱に入れるだけではフォルダの公開設定を引き継いだままになるので、
+// 先に公開しているフォルダの外へ出してから削除する
 function deleteChatAttachmentUrls(urls) {
+  let removed = 0;
   (Array.isArray(urls) ? urls : []).forEach(url => {
     try {
       const match = String(url || "").match(/[?&]id=([^&]+)/);
-      if (match && match[1]) DriveApp.getFileById(decodeURIComponent(match[1])).setTrashed(true);
+      if (!match || !match[1]) return;
+      const file = DriveApp.getFileById(decodeURIComponent(match[1]));
+      try { file.moveTo(DriveApp.getRootFolder()); } catch (moveError) { console.error("画像をフォルダから移せませんでした", moveError); }
+      try { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW); } catch (sharingError) { console.error("画像の共有を解除できませんでした", sharingError); }
+      file.setTrashed(true);
+      removed++;
     } catch (error) {
-      console.error("未使用チャット画像の削除失敗", error);
+      console.error("チャット画像の削除失敗", error);
     }
   });
+  return removed;
 }
 
 function getChatHiddenAt(sheetHiddenChat, user1, user2) {
@@ -3692,6 +3742,180 @@ function getFcmAccessToken(account, cacheKey) {
   }
 }
 
+// ===== アカウントの削除と、削除したIDの管理 =====
+// 退会した人のIDをそのまま残さないよう、元に戻せない照合値で記録する
+function retiredIdKey(userId) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(base64UrlEncode("retired-id:" + normalizeUserId(userId)), getUserTokenSecret()));
+}
+
+function isRetiredUserId(ss, userId) {
+  const sheet = ss.getSheetByName(RETIRED_ID_SHEET);
+  if (!sheet || sheet.getLastRow() <= 1) return false;
+  const key = retiredIdKey(userId);
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().some(row => cleanCell(row[0]) === key);
+}
+
+function retireUserId(ss, userId, note) {
+  if (isRetiredUserId(ss, userId)) return false;
+  getOrCreateSheet(ss, RETIRED_ID_SHEET, RETIRED_ID_HEADERS).appendRow([retiredIdKey(userId), new Date(), note || "削除"]);
+  return true;
+}
+
+function collectTracedUserIds(ss) {
+  const found = [];
+  USED_ID_TRACE_SHEETS.forEach(([name, columns]) => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    sheet.getDataRange().getValues().slice(1).forEach(row => columns.forEach(column => {
+      const id = cleanCell(row[column]);
+      if (id) found.push(id);
+    }));
+  });
+  return found;
+}
+
+// 削除の記録がない時期に消されたアカウントのIDも、データが残っていれば使わせない
+function hasPastUserData(ss, userId) {
+  const target = normalizeUserId(userId);
+  return collectTracedUserIds(ss).some(id => normalizeUserId(id) === target);
+}
+
+// 条件に合う行を削除する（下から、続いている行はまとめて消す）
+function deleteSheetRows(sheet, matches) {
+  if (!sheet || sheet.getLastRow() <= 1) return 0;
+  const rows = sheet.getDataRange().getValues();
+  let removed = 0;
+  for (let end = rows.length - 1; end >= 1; end--) {
+    if (!matches(rows[end])) continue;
+    let start = end;
+    while (start - 1 >= 1 && matches(rows[start - 1])) start--;
+    const count = end - start + 1;
+    try {
+      sheet.deleteRows(start + 1, count);
+    } catch (error) {
+      // 見出し以外の行をすべて消すことはできないため、その場合は中身を空にする
+      sheet.getRange(start + 1, 1, count, rows[0].length).clearContent();
+    }
+    removed += count;
+    end = start;
+  }
+  return removed;
+}
+
+// そのユーザーの記録をシートから消し、チャットに添付されていた画像のURLを返す
+function removeUserSheetData(ss, userId) {
+  const target = cleanCell(userId);
+  const chatSheet = ss.getSheetByName("チャット");
+  const attachments = [];
+  if (chatSheet && chatSheet.getLastRow() > 1) {
+    getChatRows(chatSheet).slice(1).forEach(row => {
+      if (cleanCell(row[0]) === target || cleanCell(row[1]) === target) attachments.push(...parseAttachmentCell(row[7]));
+    });
+  }
+  USER_DATA_SHEETS.forEach(([name, columns]) => {
+    deleteSheetRows(ss.getSheetByName(name), row => columns.some(column => cleanCell(row[column]) === target));
+  });
+  return attachments;
+}
+
+function firebaseDatabaseRequest(token, method, path, body) {
+  const options = { method: method, headers: { Authorization: "Bearer " + token }, muteHttpExceptions: true };
+  if (body !== undefined) {
+    options.contentType = "application/json";
+    options.payload = JSON.stringify(body);
+  }
+  const query = path.indexOf("?") >= 0 ? path.slice(path.indexOf("?")) : "";
+  const resource = query ? path.slice(0, path.indexOf("?")) : path;
+  const response = UrlFetchApp.fetch(FIREBASE_DATABASE_URL.replace(/\/+$/, "") + "/" + resource + ".json" + query, options);
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error("Firebaseの操作に失敗しました: HTTP " + code);
+  return JSON.parse(response.getContentText() || "null");
+}
+
+// Firebaseチャットを設定していない場合は空文字を返す
+function getFirebaseAdminToken() {
+  const account = getWebPushServiceAccount();
+  if (!account) return "";
+  const token = getFirebaseDatabaseAccessToken(account);
+  if (!token) throw new Error("Firebaseの管理用トークンを取得できません");
+  return token;
+}
+
+// そのユーザーが参加した会話を、相手側の一覧も含めて Firebase から消す
+function deleteFirebaseUserData(userId) {
+  const token = getFirebaseAdminToken();
+  if (!token) return;
+  const uid = firebaseUserUid(userId);
+  const inbox = firebaseDatabaseRequest(token, "get", "inbox/" + uid) || {};
+  const updates = {};
+  updates["inbox/" + uid] = null;
+  updates["hidden/" + uid] = null;
+  Object.keys(inbox).forEach(key => {
+    const message = inbox[key] || {};
+    const partner = message.fromUid === uid ? message.toUid : message.fromUid;
+    // パスに使うので、決まった形の値だけを扱う
+    if (!/^u_[A-Za-z0-9_-]+$/.test(String(partner || "")) || partner === uid) return;
+    updates["chats/" + [uid, partner].sort().join("/")] = null;
+    updates["inbox/" + partner + "/" + key] = null;
+    updates["hidden/" + partner + "/" + uid] = null;
+  });
+  firebaseDatabaseRequest(token, "patch", "", updates);
+}
+
+function userIdFromFirebaseUid(uid) {
+  const encoded = String(uid || "").replace(/^u_/, "");
+  const padded = encoded + "===".slice((encoded.length + 3) % 4);
+  return Utilities.newBlob(Utilities.base64DecodeWebSafe(padded)).getDataAsString("UTF-8");
+}
+
+// ===== 一度だけ実行する後片付け =====
+// Apps Script のエディタで runPrivacyMaintenance を選んで「実行」する（サイトからは呼び出せない）。
+// 何度実行しても問題ない。結果は実行ログに件数だけを表示する
+function runPrivacyMaintenance() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const userSheet = ss.getSheetByName("シート1");
+  if (!userSheet || userSheet.getLastRow() <= 1) throw new Error("ユーザーのシートが見つかりません");
+  const userRows = userSheet.getDataRange().getValues();
+  const current = new Set(userRows.slice(1).map(row => normalizeUserId(row[0])));
+
+  // 1. 以前削除されたアカウントのIDを、再登録できないように記録する
+  const traced = collectTracedUserIds(ss);
+  try {
+    const token = getFirebaseAdminToken();
+    if (token) {
+      Object.keys(firebaseDatabaseRequest(token, "get", "inbox?shallow=true") || {}).forEach(uid => traced.push(userIdFromFirebaseUid(uid)));
+      console.log("Firebaseの確認：成功");
+    } else {
+      console.log("Firebaseの確認：設定がないため省略しました");
+    }
+  } catch (error) {
+    console.error("Firebaseの確認：失敗しました。このままだとアカウント削除時にFirebaseの会話を消せません。" + error);
+  }
+  let retired = 0;
+  new Set(traced.map(normalizeUserId)).forEach(id => {
+    if (id && id !== ADMIN_USER_ID && !current.has(id) && retireUserId(ss, id, "過去の削除分")) retired++;
+  });
+  console.log("使えないIDとして追加した数: " + retired);
+
+  // 2. 以前に送信を取り消した画像を削除する（取り消し前の添付は chat-copy に残っている）
+  const chatSheet = ss.getSheetByName("チャット");
+  const copySheet = ss.getSheetByName("chat-copy");
+  let removedImages = 0;
+  if (chatSheet && chatSheet.getLastRow() > 1 && copySheet && copySheet.getLastRow() > 1) {
+    const unsent = new Set(getChatRows(chatSheet).slice(1).filter(row => row[6] === "unsent").map(row => cleanCell(row[0]) + "\n" + cleanCell(row[5])));
+    getChatRows(copySheet).slice(1).forEach(row => {
+      if (unsent.has(cleanCell(row[0]) + "\n" + cleanCell(row[5]))) removedImages += deleteChatAttachmentUrls(parseAttachmentCell(row[7]));
+    });
+  }
+  console.log("削除した取り消し済みの画像: " + removedImages);
+
+  // 3. 管理者の顔情報を消す
+  const adminIndex = userRows.findIndex((row, i) => i > 0 && cleanCell(row[0]) === ADMIN_USER_ID);
+  const hadFace = adminIndex > 0 && Boolean(userRows[adminIndex][3]);
+  if (hadFace) userSheet.getRange(adminIndex + 1, 4).setValue("");
+  console.log("管理者の顔情報: " + (hadFace ? "消しました" : "登録はありません"));
+}
+
 // ===== クイックリアクション =====
 // 同じ人が同じ相手に同じリアクションを送り直した場合は、行を増やさず日時を新しくする
 function saveReaction(ss, fromUser, toUser, reaction) {
@@ -3795,15 +4019,6 @@ function sendWebPushNotification(ss, toUserId, fromUserId, senderName) {
   } catch (error) {
     console.error("Web通知の送信エラー", error);
   }
-}
-
-function revokeAllWebPushTokens(ss, userId) {
-  const deviceSheet = ss.getSheetByName(WEB_PUSH_SHEET);
-  if (!deviceSheet || deviceSheet.getLastRow() <= 1) return;
-  const owners = deviceSheet.getRange(2, 1, deviceSheet.getLastRow() - 1, 1).getValues();
-  owners.forEach((row, index) => {
-    if (cleanCell(row[0]) === userId) deviceSheet.getRange(index + 2, 5).setValue("無効");
-  });
 }
 
 function sendAndroidPushNotification(ss, toUserId, title, body, chatTargetUserId) {

@@ -1852,3 +1852,4 @@ html body button.reply-cancel { flex:0 0 auto; width:34px; height:34px; min-heig
 .teacher-hint { margin:0 0 12px; font-size:12px; line-height:1.7; color:var(--ui-muted); text-align:left; }
 html body .user-badge.is-teacher { background:#b45309!important; border-color:#b45309!important; color:#ffffff!important; font-weight:800; }
 html body .user-badge.is-admin { background:#6d28d9!important; border-color:#6d28d9!important; color:#ffffff!important; font-weight:800; }
+.btn-update-face[hidden] { display:none!important; }

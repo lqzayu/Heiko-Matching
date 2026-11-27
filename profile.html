@@ -489,7 +489,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127w">
+    <link rel="stylesheet" href="theme.css?v=20261127x">
     <script src="ui.js?v=20261127u"></script>
     <script src="tour.js?v=20261127p" defer></script>
     <script src="face-camera.js?v=20261118lazy"></script>
@@ -979,7 +979,7 @@
         }
 
         async function deleteAccount() {
-            const isConfirmed = confirm("ユーザー情報を削除すると、現在のユーザーとして平工マッチングにアクセスすることができなくなります。よろしいですか？");
+            const isConfirmed = confirm("ユーザー情報を削除しますか？元に戻すことはできません。\n\n・あなたのチャットと画像は削除され、相手の画面からも消えます。\n・AI相談やJM計算などの記録も削除されます。\n・同じユーザIDでは、もう登録できません。");
             if (!isConfirmed) return;
 
             const email = localStorage.getItem("userEmail");
@@ -989,10 +989,11 @@
             }
 
             try {
+                // 会話や画像の削除に時間がかかることがあるので、長めに待つ
                 const result = await postGas({
                     mode: "deleteAccount",
                     email: email
-                });
+                }, 90000);
                 if (result.status === "success") {
                     alert("ユーザー情報を削除しました。");
                     clearHeikoSession();
@@ -1369,6 +1370,12 @@
             const adminButton = document.getElementById("nav-admin-btn");
             if (adminButton && currentUserId === "admin" && localStorage.getItem("isImpersonating") !== "true") {
                 adminButton.style.display = "inline-block";
+            }
+
+            // 管理者アカウントは顔認証を使えない
+            if (currentUserId === "admin") {
+                const faceButton = document.querySelector(".btn-update-face");
+                if (faceButton) faceButton.hidden = true;
             }
 
             if (userName) document.getElementById("nickname-field").value = userName;
