@@ -452,7 +452,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261128a">
+    <link rel="stylesheet" href="theme.css?v=20261128b">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
         .news-form { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
@@ -819,14 +819,20 @@
                 <div class="panel-head">
                     <div>
                         <h2 id="news-admin-title">📢 お知らせ配信</h2>
-                        <p class="panel-note">配信すると全員のホームのベルに届き、次にホームを開いたときに画面にも表示されます。個人が分かる情報は書かないでください。</p>
+                        <p class="panel-note">配信すると、選んだ対象の人のホームのベルに届き、次にホームを開いたときに画面にも表示されます。個人が分かる情報は書かないでください。</p>
                     </div>
                     <span class="panel-count" id="news-count">--</span>
                 </div>
                 <div class="news-form">
+                    <label class="cv-field">配信する対象
+                        <select id="news-form-audience">
+                            <option value="all">全員</option>
+                            <option value="teacher">先生のみ</option>
+                        </select>
+                    </label>
                     <label class="cv-field">タイトル（60文字まで）<input id="news-form-title" type="text" maxlength="60" placeholder="例：メンテナンスのお知らせ" autocomplete="off"></label>
                     <label class="cv-field">本文（1000文字まで）<textarea id="news-form-body" rows="5" maxlength="1000" placeholder="利用者に伝えたい内容を入力してください"></textarea></label>
-                    <button type="button" class="btn-reload" id="news-publish" onclick="publishAnnouncement()">全員に配信する</button>
+                    <button type="button" class="btn-reload" id="news-publish" onclick="publishAnnouncement()">配信する</button>
                     <p class="cv-status" id="news-status" aria-live="polite"></p>
                 </div>
                 <ul class="news-admin-list" id="news-admin-list"></ul>
@@ -1083,6 +1089,7 @@
         }
 
         // ---------- お知らせ配信 ----------
+        let teacherCount = null; // 「先生」に設定されている人数（一覧を読み込むまでは分からない）
         async function loadAdminAnnouncements() {
             const list = document.getElementById("news-admin-list");
             const show = text => { list.textContent = ""; const item = document.createElement("li"); item.textContent = text; list.appendChild(item); };
@@ -1096,7 +1103,7 @@
                     const item = document.createElement("li");
                     const text = document.createElement("div");
                     const title = document.createElement("strong");
-                    title.textContent = news.title;
+                    title.textContent = `${news.audience === "先生" ? "【先生のみ】" : ""}${news.title}`;
                     const date = document.createElement("small");
                     date.textContent = new Date(news.time).toLocaleString("ja-JP");
                     const body = document.createElement("p");
@@ -1122,16 +1129,21 @@
             const title = titleInput.value.trim();
             const body = bodyInput.value.trim();
             if (!title || !body) { status.textContent = "タイトルと本文を入力してください。"; return; }
-            if (!confirm(`次のお知らせを全員に配信します。よろしいですか？\n\n【${title}】\n${body}`)) return;
+            const toTeachers = document.getElementById("news-form-audience").value === "teacher";
+            if (toTeachers && teacherCount === 0) { status.textContent = "「先生」に設定されたユーザーがいません。ユーザー管理で「先生にする」を押してから配信してください。"; return; }
+            const target = toTeachers ? `先生のみ（${teacherCount === null ? "人数は未確認" : `${teacherCount}人`}）` : "全員";
+            if (!confirm(`次のお知らせを【${target}】に配信します。よろしいですか？\n\n【${title}】\n${body}`)) return;
             const button = document.getElementById("news-publish");
             button.disabled = true;
             status.textContent = "配信しています…";
             try {
-                const result = await postGas({ mode: "adminPublishAnnouncement", adminId: ADMIN_ID, adminToken: adminToken, title, body });
+                const result = await postGas({ mode: toTeachers ? "adminPublishTeacherAnnouncement" : "adminPublishAnnouncement", adminId: ADMIN_ID, adminToken: adminToken, title, body });
                 if (result.status !== "success") { status.textContent = "配信できませんでした：" + conversationError(result.message); return; }
                 titleInput.value = "";
                 bodyInput.value = "";
-                status.textContent = "配信しました。";
+                status.textContent = `${target}に配信しました。`;
+                // 次の配信で対象を間違えないように、全員に戻す
+                document.getElementById("news-form-audience").value = "all";
                 await loadAdminAnnouncements();
             } catch (error) {
                 // 通信が切れても配信できている場合があるので、一覧で確かめてもらう
@@ -1285,6 +1297,7 @@
 
         function renderUsers(users) {
             setConversationUsers(users);
+            teacherCount = users.filter(u => u.grade === "先生").length;
             const userBody = document.getElementById("user-table-body");
             userBody.innerHTML = "";
 

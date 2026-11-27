@@ -1881,3 +1881,36 @@ html body .news-dialog button.news-close { width:36px; height:36px; min-height:3
 .news-item h3 { margin:4px 0 6px; font-size:15px; font-weight:800; overflow-wrap:anywhere; }
 .news-item p { margin:0; font-size:14px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
 .news-empty { padding:20px 0; text-align:center; color:var(--ui-muted); font-size:14px; }
+
+/* ===== 新規登録：利用規約とプライバシーポリシーの確認 ===== */
+.terms-agreement { margin:4px 0 14px; padding:12px 14px 14px; border:1px solid var(--ui-line); border-radius:14px; text-align:left; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.terms-agreement legend { padding:0 6px; font-size:12px; font-weight:800; color:var(--ui-muted); }
+html body .terms-agreement button.terms-open { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:44px; margin:0; padding:9px 12px; border:1px solid var(--ui-line); border-radius:10px; background:var(--ui-soft); color:var(--ui-ink); box-shadow:none; font-size:14px; font-weight:700; text-align:left; cursor:pointer; }
+.terms-open .terms-state { flex:0 0 auto; padding:2px 8px; border-radius:999px; border:1px solid var(--ui-line); color:var(--ui-muted); font-size:11px; }
+.terms-open.is-confirmed .terms-state { background:#16a34a; border-color:#16a34a; color:#ffffff; }
+html body .terms-agreement label.terms-check { display:flex; align-items:flex-start; gap:10px; margin:4px 0 0; font-size:14px; font-weight:700; line-height:1.6; color:var(--ui-ink); cursor:pointer; }
+html body .terms-check input { flex:0 0 auto; width:20px; height:20px; margin:2px 0 0; accent-color:#059669; }
+html body .terms-check:has(input:disabled) { opacity:.55; cursor:not-allowed; }
+.terms-hint { margin:0; font-size:12px; line-height:1.6; color:var(--ui-muted); }
+.terms-hint[hidden] { display:none; }
+.terms-dialog { width:min(720px, calc(100vw - 24px)); height:min(80dvh, 760px); max-height:calc(100dvh - 24px); padding:0; border:1px solid var(--ui-line); border-radius:20px; background:var(--ui-paper); color:var(--ui-ink); box-shadow:0 30px 80px rgba(0,0,0,.3); overflow:hidden; }
+.terms-dialog[open] { display:flex; flex-direction:column; }
+.terms-dialog::backdrop { background:rgba(10,20,30,.6); }
+.terms-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--ui-line); }
+.terms-dialog-head h2 { margin:0; font-size:17px; font-weight:800; }
+html body .terms-dialog button.terms-close { width:36px; height:36px; min-height:36px; margin:0; padding:0; border:0; border-radius:50%; background:var(--ui-soft); color:var(--ui-ink); box-shadow:none; font-size:20px; cursor:pointer; }
+.terms-dialog-body { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:6px 18px 18px; text-align:left; font-size:14px; line-height:1.8; overflow-wrap:anywhere; }
+.terms-dialog-body h2 { margin:22px 0 6px; padding:0; border:0; background:transparent; font-size:15px; font-weight:800; color:var(--ui-ink); }
+.terms-dialog-body :is(p, li) { margin:6px 0; font-size:14px; color:var(--ui-ink); text-align:left; }
+.terms-dialog-body ul { margin:6px 0; padding-left:20px; }
+.terms-fallback-link { display:block; margin-top:12px; font-weight:800; color:var(--ui-green); }
+.terms-dialog-foot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:12px 18px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--ui-line); }
+.terms-dialog-foot p { flex:1 1 200px; margin:0; font-size:12px; line-height:1.6; color:var(--ui-muted); }
+html body .terms-dialog button.terms-confirm { flex:0 0 auto; min-height:44px; margin:0; padding:10px 22px; border:0; border-radius:12px; background:#059669; color:#ffffff; box-shadow:none; font-size:15px; font-weight:800; cursor:pointer; }
+html body .terms-dialog button.terms-confirm:disabled { opacity:.4; cursor:not-allowed; }
+/* 共通の入力欄の指定でチェックの印が隠れるため、印は自分で描く */
+html body .terms-check input#terms-agree { -webkit-appearance:none!important; appearance:none!important; position:relative; width:22px!important; height:22px!important; min-height:0!important; padding:0!important; border:2px solid var(--ui-muted)!important; border-radius:6px!important; background:var(--ui-paper)!important; box-shadow:none!important; cursor:pointer; }
+html body .terms-check input#terms-agree:checked { background:#059669!important; border-color:#059669!important; }
+html body .terms-check input#terms-agree:checked::after { content:""; position:absolute; left:6px; top:2px; width:5px; height:11px; border-right:3px solid #ffffff; border-bottom:3px solid #ffffff; transform:rotate(45deg); }
+html body .terms-check input#terms-agree:focus-visible { outline:3px solid var(--ui-green); outline-offset:2px; }
+html body .terms-check input#terms-agree:disabled { cursor:not-allowed; }

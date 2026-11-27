@@ -902,7 +902,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261128a">
+    <link rel="stylesheet" href="theme.css?v=20261128b">
 
     <style>
         #remember-login:checked + .remember-login-checkmark {
@@ -1066,6 +1066,14 @@
 
                     <div id="register-section" style="display: none;">
 
+                        <fieldset class="terms-agreement" id="terms-agreement">
+                            <legend>登録の前に確認してください</legend>
+                            <button type="button" class="terms-open" data-doc="terms" data-no-busy><span>利用規約を読む</span><span class="terms-state">未確認</span></button>
+                            <button type="button" class="terms-open" data-doc="privacy" data-no-busy><span>プライバシーポリシーを読む</span><span class="terms-state">未確認</span></button>
+                            <label class="terms-check"><input type="checkbox" id="terms-agree" disabled> <span>利用規約とプライバシーポリシーに同意します</span></label>
+                            <p class="terms-hint" id="terms-hint">2つとも確認すると、チェックできるようになります。</p>
+                        </fieldset>
+
                         <button type="submit" class="btn-submit-primary"
                             style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);"
                             >認証コードを送信する</button>
@@ -1119,6 +1127,17 @@
 
 
     <!-- お問い合わせ（ログインできない人も送れる） -->
+    <dialog id="terms-dialog" class="terms-dialog" aria-labelledby="terms-dialog-title">
+        <div class="terms-dialog-head">
+            <h2 id="terms-dialog-title">利用規約</h2>
+            <button type="button" id="terms-close" class="terms-close" aria-label="閉じる" data-no-busy>×</button>
+        </div>
+        <div class="terms-dialog-body" id="terms-dialog-body" tabindex="0"></div>
+        <div class="terms-dialog-foot">
+            <p id="terms-dialog-note" aria-live="polite"></p>
+            <button type="button" id="terms-confirm" class="terms-confirm" disabled data-no-busy>確認しました</button>
+        </div>
+    </dialog>
     <dialog id="contact-dialog" class="contact-dialog" aria-labelledby="contact-title">
         <form id="contact-form" novalidate onsubmit="submitContact(event)">
             <div class="contact-head">
@@ -1829,6 +1848,109 @@
         }
 
 
+        // ===== 新規登録：利用規約とプライバシーポリシーの確認 =====
+        // それぞれを最後まで表示して「確認しました」を押すと、同意のチェックができる。
+        // 入力中の内容が消えないように、ページを移らずに登録画面の上に開く
+        const TERMS_DOCUMENTS = { terms: { page: "terms.html", title: "利用規約" }, privacy: { page: "privacy.html", title: "プライバシーポリシー" } };
+        const confirmedDocuments = new Set();
+        let openDocumentKey = "";
+        let documentRequest = 0;
+
+        function renderTermsState() {
+            document.querySelectorAll(".terms-open").forEach(button => {
+                const confirmed = confirmedDocuments.has(button.dataset.doc);
+                button.classList.toggle("is-confirmed", confirmed);
+                button.querySelector(".terms-state").textContent = confirmed ? "✓ 確認済み" : "未確認";
+            });
+            const ready = confirmedDocuments.size === Object.keys(TERMS_DOCUMENTS).length;
+            const checkbox = document.getElementById("terms-agree");
+            checkbox.disabled = !ready;
+            if (!ready) checkbox.checked = false;
+            document.getElementById("terms-hint").hidden = ready;
+        }
+
+        // 最後まで表示されたら「確認しました」を押せるようにする
+        function updateTermsConfirmButton() {
+            const body = document.getElementById("terms-dialog-body");
+            if (body.dataset.loaded !== "1") return;
+            if (body.clientHeight > 0 && body.scrollHeight - body.scrollTop - body.clientHeight <= 24) {
+                document.getElementById("terms-confirm").disabled = false;
+                document.getElementById("terms-dialog-note").textContent = "内容を確認したら、ボタンを押してください。";
+            }
+        }
+
+        async function openTermsDocument(key) {
+            const info = TERMS_DOCUMENTS[key];
+            const dialog = document.getElementById("terms-dialog");
+            const body = document.getElementById("terms-dialog-body");
+            const confirmButton = document.getElementById("terms-confirm");
+            const note = document.getElementById("terms-dialog-note");
+            const request = ++documentRequest;
+            openDocumentKey = key;
+            document.getElementById("terms-dialog-title").textContent = info.title;
+            body.dataset.loaded = "";
+            body.textContent = "読み込み中…";
+            body.scrollTop = 0;
+            confirmButton.disabled = true;
+            note.textContent = "最後まで読むと、ボタンを押せるようになります。";
+            if (!dialog.open) { if (dialog.showModal) dialog.showModal(); else dialog.setAttribute("open", ""); }
+            try {
+                const response = await fetch(info.page, { cache: "no-cache" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const page = new DOMParser().parseFromString(await response.text(), "text/html");
+                if (request !== documentRequest) return;
+                // 本文だけを取り出す（戻るボタン、見出し、フッター、プログラムは除く）
+                page.body.querySelectorAll("script, style, footer, header, h1, [onclick]").forEach(element => element.remove());
+                if (!page.body.querySelector("h2")) throw new Error("本文がありません");
+                body.textContent = "";
+                body.append(...Array.from(page.body.childNodes).map(node => document.importNode(node, true)));
+                body.dataset.loaded = "1";
+                body.focus({ preventScroll: true });
+                requestAnimationFrame(updateTermsConfirmButton);
+                setTimeout(updateTermsConfirmButton, 300);
+            } catch (error) {
+                if (request !== documentRequest) return;
+                // 画面内に表示できないときは、別のタブで開いて確認してもらう
+                body.textContent = "内容を表示できませんでした。下のリンクから開いて確認してください。";
+                const link = document.createElement("a");
+                link.href = info.page;
+                link.target = "_blank";
+                link.rel = "noopener";
+                link.className = "terms-fallback-link";
+                link.textContent = `${info.title}を別のタブで開く`;
+                link.addEventListener("click", () => { confirmButton.disabled = false; note.textContent = "内容を確認したら、ボタンを押してください。"; });
+                body.appendChild(link);
+            }
+        }
+
+        function closeTermsDocument() {
+            documentRequest++;
+            const dialog = document.getElementById("terms-dialog");
+            if (dialog.open && dialog.close) dialog.close();
+            else dialog.removeAttribute("open");
+        }
+
+        function resetTermsAgreement() {
+            confirmedDocuments.clear();
+            document.getElementById("terms-agree").checked = false;
+            renderTermsState();
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            document.querySelectorAll(".terms-open").forEach(button => button.addEventListener("click", () => openTermsDocument(button.dataset.doc)));
+            document.getElementById("terms-dialog-body").addEventListener("scroll", updateTermsConfirmButton, { passive: true });
+            window.addEventListener("resize", updateTermsConfirmButton);
+            document.getElementById("terms-close").addEventListener("click", closeTermsDocument);
+            document.getElementById("terms-confirm").addEventListener("click", () => {
+                confirmedDocuments.add(openDocumentKey);
+                closeTermsDocument();
+                renderTermsState();
+                const next = document.querySelector(".terms-open:not(.is-confirmed)") || document.getElementById("terms-agree");
+                next.focus({ preventScroll: true });
+            });
+        });
+
+
         function toggleMode(mode) {
 
             const title = document.getElementById("form-title");
@@ -1922,6 +2044,7 @@
                 document.getElementById("display-name").value = "";
 
                 document.getElementById("reg-email").value = "";
+                resetTermsAgreement();
 
 
                 faceLoginBtn.style.display = "inline-block";
@@ -2289,6 +2412,10 @@
             if (passwordError) return updateMsg(passwordError, "error");
             if (password !== confirm) return updateMsg("パスワードが一致しません", "error");
             if (!email.includes("@")) return updateMsg("メールアドレスの形式が正しくありません", "error");
+            if (!document.getElementById("terms-agree").checked) {
+                document.getElementById("terms-agreement").scrollIntoView({ block: "center", behavior: "smooth" });
+                return updateMsg("利用規約とプライバシーポリシーを確認して、同意にチェックしてください", "error");
+            }
 
 
             try {
@@ -2306,6 +2433,8 @@
                     email: email,
 
                     password: password,
+
+                    termsAgreed: true,
 
                     faceFeatures: savedFeaturesText
 

@@ -39,6 +39,7 @@
         return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
     };
     const unreadItems = () => items.filter(item => item.unread);
+    const senderLabel = item => item.audience === "先生" ? "運営から先生へのお知らせ" : "運営からのお知らせ";
 
     // ---------- ベル ----------
     function placeBell() {
@@ -107,7 +108,7 @@
             const row = document.createElement("li");
             row.className = "news-item" + (item.unread ? " is-new" : "");
             const date = document.createElement("small");
-            date.textContent = (item.unread ? "NEW・" : "") + formatDate(item.time);
+            date.textContent = (item.unread ? "NEW・" : "") + formatDate(item.time) + (item.audience === "先生" ? "・先生向け" : "");
             const title = document.createElement("h3");
             title.textContent = item.title;
             const body = document.createElement("p");
@@ -149,7 +150,7 @@
         // 既読は「どの時刻まで読んだか」で保存するので、古いものから順に見せる（残りは次に開いたときに出る）
         const ordered = fresh.slice().sort((a, b) => a.time - b.time);
         const shown = ordered.slice(0, POPUP_LIMIT);
-        const steps = shown.map(item => ({ title: `📢 ${item.title}`, body: `${formatDate(item.time)}　運営からのお知らせ\n\n${item.body}` }));
+        const steps = shown.map(item => ({ title: `📢 ${item.title}`, body: `${formatDate(item.time)}　${senderLabel(item)}\n\n${item.body}` }));
         const rest = fresh.length - shown.length;
         steps.push({
             target: () => bell,

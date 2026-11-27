@@ -7,9 +7,12 @@ const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getPropert
 
 const ADMIN_USER_ID = "admin";
 const WEB_PUSH_SHEET = "Web通知";
+// 利用規約・プライバシーポリシーの版。内容を改定したら日付を更新する（登録した人がどの版に同意したかを記録する）
+const TERMS_VERSION = "2026-11-27";
 // 運営からのお知らせと、利用者ごとにどこまで読んだか
 const ANNOUNCEMENT_SHEET = "お知らせ";
-const ANNOUNCEMENT_HEADERS = ["お知らせID", "配信日時", "タイトル", "本文", "状態"];
+const ANNOUNCEMENT_HEADERS = ["お知らせID", "配信日時", "タイトル", "本文", "状態", "対象"];
+const ANNOUNCEMENT_TEACHERS = "先生";   // 対象の列がこの値なら先生だけに表示する。空欄や「全員」は全員向け
 const ANNOUNCEMENT_READ_SHEET = "お知らせ既読";
 const ANNOUNCEMENT_LIST_LIMIT = 20;
 // 管理者が会話を閲覧した記録（アプリからは消せない）
@@ -137,7 +140,7 @@ function doPost(e) {
     const mode = data.mode;
 
     const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword", "submitContact"];
-    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher", "adminViewConversation", "adminGetViewLogs", "adminGetAnnouncements", "adminPublishAnnouncement", "adminDeleteAnnouncement"];
+    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher", "adminViewConversation", "adminGetViewLogs", "adminGetAnnouncements", "adminPublishAnnouncement", "adminPublishTeacherAnnouncement", "adminDeleteAnnouncement"];
     if (!publicModes.includes(mode) && !adminModes.includes(mode)) {
       const actorId = getRequestActorId(mode, data);
       const adminProfileRequest = mode === "getUserProfile" && isAdminRequest(data);
@@ -621,9 +624,16 @@ function doPost(e) {
     }
 
     if (mode === "getAnnouncements") {
-      const readUpTo = getAnnouncementReadTime(ss, cleanCell(data.userId));
-      return createRes("success", readAnnouncements(ss).slice(0, ANNOUNCEMENT_LIST_LIMIT)
-        .map(item => ({ id: item.id, time: item.time, title: item.title, body: item.body, unread: item.time > readUpTo })));
+      const userId = cleanCell(data.userId);
+      const readUpTo = getAnnouncementReadTime(ss, userId);
+      // 先生向けは、保存されている区分が「先生」の人にだけ返す（画面の指定は使わない）
+      const userRows = sheetUser && sheetUser.getLastRow() > 1 ? sheetUser.getDataRange().getValues() : [];
+      const userRow = userRows.find((row, index) => index > 0 && cleanCell(row[0]) === userId);
+      const isTeacher = Boolean(userRow) && displayGrade(userId, userRow[13]) === TEACHER_GRADE;
+      return createRes("success", readAnnouncements(ss)
+        .filter(item => item.audience !== ANNOUNCEMENT_TEACHERS || isTeacher)
+        .slice(0, ANNOUNCEMENT_LIST_LIMIT)
+        .map(item => ({ id: item.id, time: item.time, title: item.title, body: item.body, audience: item.audience, unread: item.time > readUpTo })));
     }
 
     if (mode === "markAnnouncementsRead") {
@@ -640,16 +650,18 @@ function doPost(e) {
       return createRes("success", readAnnouncements(ss).slice(0, 30));
     }
 
-    if (mode === "adminPublishAnnouncement") {
+    if (mode === "adminPublishAnnouncement" || mode === "adminPublishTeacherAnnouncement") {
+      const audience = mode === "adminPublishTeacherAnnouncement" ? ANNOUNCEMENT_TEACHERS : "全員";
       if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
       const title = cleanCell(data.title).replace(/\s+/g, " ");
       const body = cleanCell(data.body).replace(/\r\n?/g, "\n");
       if (!title || title.length > 60) return createRes("error", "タイトルは1〜60文字で入力してください");
       if (!body || body.length > 1000) return createRes("error", "本文は1〜1000文字で入力してください");
-      const duplicateKey = "announcement-" + base64UrlEncode(Utilities.computeHmacSha256Signature(base64UrlEncode(title + "\n" + body), getUserTokenSecret()));
+      const duplicateKey = "announcement-" + base64UrlEncode(Utilities.computeHmacSha256Signature(base64UrlEncode(audience + "\n" + title + "\n" + body), getUserTokenSecret()));
       if (!claimCooldown(duplicateKey, 60)) return createRes("error", "同じお知らせを配信したばかりです。一覧を確認してください");
-      getOrCreateSheet(ss, ANNOUNCEMENT_SHEET, ANNOUNCEMENT_HEADERS)
-        .appendRow([Utilities.getUuid(), new Date(), safeSheetText(title, 60), safeSheetText(body, 1000), "公開"]);
+      const announcementSheet = getOrCreateSheet(ss, ANNOUNCEMENT_SHEET, ANNOUNCEMENT_HEADERS);
+      if (!announcementSheet.getRange(1, 6).getValue()) announcementSheet.getRange(1, 6).setValue("対象");
+      announcementSheet.appendRow([Utilities.getUuid(), new Date(), safeSheetText(title, 60), safeSheetText(body, 1000), "公開", audience]);
       return createRes("success", "ANNOUNCEMENT_PUBLISHED");
     }
 
@@ -873,6 +885,7 @@ function doPost(e) {
         return createRes("error", "顔情報の形式が正しくないか、データが大きすぎます");
       }
       if (isReservedDisplayName(registerUserId, data.name)) return createRes("error", RESERVED_NAME_MESSAGE);
+      if (data.termsAgreed !== true) return createRes("error", "利用規約とプライバシーポリシーへの同意が必要です。画面を読み込み直してください");
       if (!claimCooldown("register-mail-" + normalizeUserId(registerUserId), 60)) return createRes("error", "認証メールは1分後に再送できます");
 
       const rows = sheetUser.getLastRow() > 0 ? sheetUser.getDataRange().getValues() : [];
@@ -915,7 +928,8 @@ function doPost(e) {
         "",
         Utilities.getUuid(),
         "",
-        ""
+        "",
+        TERMS_VERSION + "版に同意（" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm") + "）"
       ];
 
       const registerLock = LockService.getScriptLock();
@@ -3355,6 +3369,8 @@ function ensureUserSchoolColumns(sheetUser) {
   if (sheetUser.getMaxColumns() < 15) sheetUser.insertColumnsAfter(sheetUser.getMaxColumns(), 15 - sheetUser.getMaxColumns());
   if (!sheetUser.getRange(1, 14).getValue()) sheetUser.getRange(1, 14).setValue("学年");
   if (!sheetUser.getRange(1, 15).getValue()) sheetUser.getRange(1, 15).setValue("学科");
+  if (sheetUser.getMaxColumns() < 16) sheetUser.insertColumnsAfter(sheetUser.getMaxColumns(), 16 - sheetUser.getMaxColumns());
+  if (!sheetUser.getRange(1, 16).getValue()) sheetUser.getRange(1, 16).setValue("規約への同意");
 }
 
 function ensureRecruitmentDurationColumn(sheetRecruit) {
@@ -4106,7 +4122,7 @@ function readAnnouncements(ss) {
   if (!sheet || sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, ANNOUNCEMENT_HEADERS.length).getValues()
     .filter(row => cleanCell(row[0]) && cleanCell(row[4]) === "公開")
-    .map(row => ({ id: cleanCell(row[0]), time: new Date(row[1]).getTime() || 0, title: cleanCell(row[2]), body: cleanCell(row[3]) }))
+    .map(row => ({ id: cleanCell(row[0]), time: new Date(row[1]).getTime() || 0, title: cleanCell(row[2]), body: cleanCell(row[3]), audience: cleanCell(row[5]) === ANNOUNCEMENT_TEACHERS ? ANNOUNCEMENT_TEACHERS : "全員" }))
     .sort((a, b) => b.time - a.time);
 }
 
