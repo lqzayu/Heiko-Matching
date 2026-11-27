@@ -1716,3 +1716,47 @@ html[data-theme="dark"] body .heiko-notify-guide-button { color:#7dd3fc; }
 html body .heiko-push-prompt a { align-self:center; padding:10px 14px; font-size:13px; font-weight:700; color:#0f766e; }
 html[data-theme="dark"] body .heiko-push-prompt a { color:#7dd3fc; }
 @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) body .heiko-push-prompt a { color:#7dd3fc; } }
+
+/* ===== アプリ独自のプルダウン（dropdown.js） ===== */
+.hs { display:block; position:relative; width:100%; min-width:0; text-align:left; }
+.hs[hidden] { display:none!important; }
+/* 元の select は値を持たせるために残すが、見せない */
+html body .hs > select.hs-native { position:absolute!important; left:0; bottom:0; width:100%!important; height:1px!important; min-width:0!important; min-height:0!important; margin:0!important; padding:0!important; border:0!important; opacity:0!important; pointer-events:none!important; }
+html body .hs > button.hs-trigger {
+ display:flex; align-items:center; gap:10px; width:100%; min-width:0; min-height:44px; margin:0; padding:9px 12px 9px 14px;
+ border:1px solid var(--glass-border, var(--ui-line)); border-radius:12px;
+ background:linear-gradient(135deg,var(--glass-surface-strong),var(--glass-surface)); color:var(--ui-ink);
+ box-shadow:inset 0 1px 0 var(--glass-highlight),0 8px 22px rgba(36,60,50,.06);
+ font-family:inherit; font-size:15px; font-weight:500; line-height:1.4; letter-spacing:normal; text-align:left; text-transform:none; cursor:pointer; transform:none!important;
+}
+html body .hs > button.hs-trigger:hover { border-color:var(--ui-green); filter:none; }
+html body .hs > button.hs-trigger:focus-visible, html body .hs.is-open > button.hs-trigger { border-color:var(--ui-green); box-shadow:0 0 0 3px color-mix(in srgb, var(--ui-green) 24%, transparent); outline:none; }
+html body .hs > button.hs-trigger:disabled { opacity:.55; cursor:not-allowed; }
+html body .hs > button.hs-trigger[aria-invalid="true"], html body .hs.has-error > button.hs-trigger { border-color:#f59e0b!important; box-shadow:0 0 0 3px rgba(245,158,11,.18)!important; }
+.hs.has-error::after { content:"項目を選んでください"; display:block; margin-top:4px; color:#b45309; font-size:12px; font-weight:700; }
+.hs-value { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.hs-trigger.is-placeholder .hs-value { color:var(--ui-muted); }
+.hs-trigger::after { content:""; flex:0 0 auto; width:8px; height:8px; margin:-4px 2px 0 0; border-right:2px solid var(--ui-muted); border-bottom:2px solid var(--ui-muted); transform:rotate(45deg); transition:transform .2s ease, margin .2s ease; }
+.hs.is-open .hs-trigger::after { transform:rotate(225deg); margin-top:4px; }
+
+.hs-panel {
+ position:fixed; inset:auto; z-index:6000; box-sizing:border-box; display:flex; flex-direction:column; gap:6px; margin:0; padding:6px; overflow:hidden;
+ border:1px solid var(--ui-line); border-radius:14px; background:var(--ui-paper); color:var(--ui-ink); box-shadow:0 18px 48px rgba(15,23,42,.24); text-align:left;
+}
+.hs-panel.is-in { animation:hs-in .16s cubic-bezier(.22,1,.36,1); }
+.hs-panel.is-upward.is-in { animation-name:hs-in-up; }
+@keyframes hs-in { from { opacity:0; transform:translateY(-6px); } }
+@keyframes hs-in-up { from { opacity:0; transform:translateY(6px); } }
+html body .hs-panel input.hs-search { flex:0 0 auto; width:100%; min-height:40px; margin:0; padding:8px 12px; box-sizing:border-box; border-radius:10px!important; font-size:16px; }
+.hs-list { position:relative; flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+.hs-group { padding:10px 12px 4px; color:var(--ui-muted); font-size:12px; font-weight:800; }
+.hs-option { display:flex; align-items:center; gap:10px; min-height:42px; padding:8px 12px; border-radius:9px; font-size:15px; line-height:1.45; overflow-wrap:anywhere; cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+.hs-option::before { content:""; flex:0 0 auto; width:6px; height:11px; margin:-3px 4px 0 2px; border-right:2px solid transparent; border-bottom:2px solid transparent; transform:rotate(45deg); }
+.hs-option[aria-selected="true"] { font-weight:800; color:var(--ui-green); }
+.hs-option[aria-selected="true"]::before { border-color:var(--ui-green); }
+.hs-option.is-active { background:var(--ui-soft); }
+.hs-option[aria-disabled="true"] { opacity:.45; cursor:default; }
+.hs-empty { padding:14px 12px; color:var(--ui-muted); font-size:13px; }
+/* 横に並べる場所では、幅を中身に合わせる */
+[data-page="admin"] :is(.se-year, .report-status-cell, .col-action, .table-school-events td) > .hs { display:inline-block; width:auto; min-width:128px; vertical-align:middle; }
+@media (prefers-reduced-motion: reduce) { .hs-panel.is-in { animation:none; } .hs-trigger::after { transition:none; } }

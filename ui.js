@@ -170,6 +170,15 @@ function releaseHeikoPush() {
     }
 }
 
+// 選択欄のプルダウンを、ブラウザやOSによらない独自の見た目にする
+function installHeikoDropdown() {
+    if (document.getElementById("heiko-dropdown-script")) return;
+    const script = document.createElement("script");
+    script.id = "heiko-dropdown-script";
+    script.src = "dropdown.js?v=20261127r";
+    document.body.appendChild(script);
+}
+
 function installHeikoNotify() {
     if (document.getElementById("heiko-notify-script")) return;
     const script = document.createElement("script");
@@ -1174,7 +1183,7 @@ function installHeikoMotion() {
 }
 
 // ボタンの波紋（押した位置から広がる）
-const HEIKO_RIPPLE_SELECTOR = "button:not(.hamburger-btn):not(.page-help-button):not(.ev-day):not(.chat-back-btn):not(.jm-rec-summary-action), .btn-search, .btn-match, .btn-reload, .heiko-recruit-post, .list-post-button, .usage-intro-button, .usage-guide-primary-link, .jm-kubun-link";
+const HEIKO_RIPPLE_SELECTOR = "button:not(.hs-trigger):not(.hamburger-btn):not(.page-help-button):not(.ev-day):not(.chat-back-btn):not(.jm-rec-summary-action), .btn-search, .btn-match, .btn-reload, .heiko-recruit-post, .list-post-button, .usage-intro-button, .usage-guide-primary-link, .jm-kubun-link";
 // 他のユーザーのアイコンを element に表示する。画像がない・読み込めないときは、もとの表示（頭文字）のまま
 function heikoApplyAvatar(element, source) {
     const value = String(source || "").trim();
@@ -1446,6 +1455,7 @@ function installMenuButtonAccessibility() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    installHeikoDropdown();
     fillSkeletonPlaceholders();
     updateMypageSub();
     installHeikoMotion();
