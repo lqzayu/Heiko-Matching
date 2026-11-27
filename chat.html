@@ -465,7 +465,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127fb">
+    <link rel="stylesheet" href="theme.css?v=20261127p">
     <style id="chat-fixed-layout">
         html,
         body[data-page="chat"] {
@@ -556,13 +556,13 @@
             }
         }
     </style>
-    <script src="ui.js?v=20261127fb"></script>
+    <script src="ui.js?v=20261127p"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script>window.HEIKO_FIREBASE_CHAT_ENABLED = true;</script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="firebase-chat.js?v=20261117hide" defer></script>
+    <script src="firebase-chat.js?v=20261127n" defer></script>
 </head>
 
 <body data-page="chat">
@@ -648,7 +648,6 @@
         let selectedAttachments = [];
         let pendingSendRequestId = "";
         let isMessageComposing = false;
-        let unreadRequest = null;
         let markReadRequest = null;
         let openMessageActionMenu = null;
         let messageActionMenuInstalled = false;
@@ -1357,24 +1356,9 @@
             return markReadRequest;
         }
 
+        // 未読の数と新着の知らせは notify.js がまとめて行う
         async function updateUnreadBadge() {
-            const badge = document.getElementById("unread-badge");
-            if (!myEmail || !badge || unreadRequest) return unreadRequest;
-
-            unreadRequest = (async () => {
-                try {
-                    const result = await postChat({ mode: "getUnreadCount", email: myEmail });
-                    const count = Number(result.message && result.message.unreadCount) || 0;
-                    badge.textContent = count > 99 ? "99+" : String(count);
-                    badge.style.display = count > 0 ? "inline-block" : "none";
-                } catch (e) {
-                    console.error("未読チェックエラー:", e);
-                } finally {
-                    unreadRequest = null;
-                }
-            })();
-
-            return unreadRequest;
+            if (window.HeikoNotify) await window.HeikoNotify.refresh();
         }
 
         async function sendMessage() {

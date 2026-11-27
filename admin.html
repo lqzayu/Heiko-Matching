@@ -452,7 +452,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127fb">
+    <link rel="stylesheet" href="theme.css?v=20261127p">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
         [data-page="admin"] .container { max-width: 1120px; margin: 28px auto 8px; }
@@ -658,7 +658,7 @@
             [data-page="admin"] .table-wrap { margin: 0 -16px; padding: 0 16px; }
         }
     </style>
-    <script src="ui.js?v=20261127fb"></script>
+    <script src="ui.js?v=20261127p"></script>
     <script src="online.js?v=20260917b" defer></script>
 </head>
 
@@ -917,7 +917,6 @@
         let adminToken = localStorage.getItem("adminToken") || "";
         const sessionToken = localStorage.getItem("sessionToken") || "";
         let overviewLoading = false;
-        let unreadRequest = null;
         let adminAccessDenied = false;
         let reportsRequest = null;
         let unreadPollTimer = null;
@@ -967,32 +966,9 @@
             document.getElementById("nav-links").classList.toggle("open");
         }
 
+        // 未読の数と新着の知らせは notify.js がまとめて行う
         async function updateUnreadBadge() {
-            const myEmail = localStorage.getItem("userEmail");
-            const badge = document.getElementById("unread-badge");
-            if (!myEmail || !badge || unreadRequest) return unreadRequest;
-
-            unreadRequest = (async () => {
-                try {
-                    const result = await postGas({ mode: "getUnreadCount", email: myEmail });
-
-                    if (result.status === "success" && result.message) {
-                        const count = result.message.unreadCount || 0;
-                        if (count > 0) {
-                            badge.innerText = count > 99 ? "99+" : count;
-                            badge.style.display = "inline-block";
-                        } else {
-                            badge.style.display = "none";
-                        }
-                    }
-                } catch (e) {
-                    console.error("未読チェックエラー:", e);
-                } finally {
-                    unreadRequest = null;
-                }
-            })();
-
-            return unreadRequest;
+            if (window.HeikoNotify) await window.HeikoNotify.refresh();
         }
 
         async function loadOverview(silent = false) {

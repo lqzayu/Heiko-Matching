@@ -6,6 +6,7 @@ const SITE_URL = "https://lqzayu.github.io/Heiko-Matching/";
 const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getProperty("FIREBASE_DATABASE_URL") || "https://heiko-matching-chat-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 const ADMIN_USER_ID = "admin";
+const WEB_PUSH_SHEET = "Web通知";
 const RECRUITMENT_DURATION_MINUTES = [15, 30, 45, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900, 960, 1020, 1080, 1140, 1200, 1260, 1320, 1380, 1440];
 const ONLINE_TIMEOUT_MS = 90 * 1000;
 const AI_DAILY_LIMIT = 5;
@@ -152,6 +153,30 @@ function doPost(e) {
       const deviceSheet = ss.getSheetByName("Android通知");
       if (deviceSheet && deviceSheet.getLastRow() > 1) revokeAndroidDeviceToken(deviceSheet, userId, fcmToken);
       return createRes("success", "ANDROID_DEVICE_UNREGISTERED");
+    }
+
+    if (mode === "getPushConfig") {
+      return createRes("success", { vapidKey: cleanCell(PropertiesService.getScriptProperties().getProperty("WEB_PUSH_VAPID_KEY")) });
+    }
+
+    if (mode === "registerWebPush") {
+      const userId = cleanCell(data.userId);
+      const fcmToken = cleanCell(data.fcmToken).slice(0, 4096);
+      const platform = cleanCell(data.platform).slice(0, 32) || "web";
+      if (!userId || !userExists(sheetUser, userId)) return createRes("error", "ユーザーが見つかりません");
+      if (!/^[A-Za-z0-9_:.-]{20,4096}$/.test(fcmToken)) return createRes("error", "通知設定を確認できませんでした");
+      const deviceSheet = getOrCreateSheet(ss, WEB_PUSH_SHEET, ["UserID", "FCMトークン", "プラットフォーム", "更新日時", "状態"]);
+      upsertAndroidDeviceToken(deviceSheet, userId, fcmToken, platform);
+      return createRes("success", "WEB_PUSH_REGISTERED");
+    }
+
+    if (mode === "unregisterWebPush") {
+      const userId = cleanCell(data.userId);
+      const fcmToken = cleanCell(data.fcmToken).slice(0, 4096);
+      if (!userId || !fcmToken) return createRes("error", "通知設定を確認できませんでした");
+      const deviceSheet = ss.getSheetByName(WEB_PUSH_SHEET);
+      if (deviceSheet && deviceSheet.getLastRow() > 1) revokeAndroidDeviceToken(deviceSheet, userId, fcmToken);
+      return createRes("success", "WEB_PUSH_UNREGISTERED");
     }
 
     if (mode === "recordUsageLog") {
@@ -1142,6 +1167,7 @@ function doPost(e) {
       if (!senderRow || !recipientRow || isBlockedBetween(sheetBlock, fromUser, toUser)) return createRes("error", "通知対象を確認できません");
       const recipientLineId = cleanCell(recipientRow[11]);
       if (recipientLineId) sendLineNotification(recipientLineId, `💬【平工マッチング】新着メッセージ\n\n${getUserDisplayName(senderRow, fromUser)} さんからメッセージが届きました：\n「${messageText}」`);
+      sendWebPushNotification(ss, toUser, fromUser, getUserDisplayName(senderRow, fromUser));
       return createRes("success", "NOTIFIED");
     }
 
@@ -1232,6 +1258,7 @@ function doPost(e) {
 
       const pushBody = `${senderName} さんからメッセージが届きました：${messageText || "画像が送信されました"}`.slice(0, 240);
       sendAndroidPushNotification(ss, toUser, "平工マッチング：新着メッセージ", pushBody, fromUser);
+      sendWebPushNotification(ss, toUser, fromUser, senderName);
 
       return createRes("success", "SENT");
     }
@@ -1710,6 +1737,7 @@ function doPost(e) {
       }
 
       if (userDeleted) {
+        revokeAllWebPushTokens(ss, cleanCell(email));
         CacheService.getScriptCache().put("revoked-user-" + cleanCell(email), "1", Math.floor(USER_SESSION_DURATION_MS / 1000));
         return createRes("success", "ACCOUNT_DELETED");
       } else {
@@ -2613,6 +2641,9 @@ function getRequestActorId(mode, data) {
     firebaseCustomToken: "userId",
     registerAndroidDevice: "userId",
     unregisterAndroidDevice: "userId",
+    getPushConfig: "userId",
+    registerWebPush: "userId",
+    unregisterWebPush: "userId",
     recordUsageLog: "userId",
     recordUsageLogs: "userId",
     createLineLinkCode: "userId",
@@ -3509,9 +3540,10 @@ function base64UrlEncode(value) {
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, "");
 }
 
-function getFcmAccessToken(account) {
+function getFcmAccessToken(account, cacheKey) {
   const cache = CacheService.getScriptCache();
-  const cached = cache.get("fcm-access-token");
+  const tokenCacheKey = cacheKey || "fcm-access-token";
+  const cached = cache.get(tokenCacheKey);
   if (cached) return cached;
 
   try {
@@ -3541,12 +3573,78 @@ function getFcmAccessToken(account) {
       return "";
     }
     const token = cleanCell(JSON.parse(response.getContentText()).access_token);
-    if (token) cache.put("fcm-access-token", token, 3300);
+    if (token) cache.put(tokenCacheKey, token, 3300);
     return token;
   } catch (error) {
     console.error("FCMアクセストークン取得エラー", error);
     return "";
   }
+}
+
+// ===== ブラウザ（スマホのホーム画面に追加したサイトを含む）へのプッシュ通知 =====
+// サイトの通知先は Firebase チャットと同じプロジェクトで作られるため、FIREBASE_SERVICE_ACCOUNT_JSON を使う
+function getWebPushServiceAccount() {
+  const raw = PropertiesService.getScriptProperties().getProperty("FIREBASE_SERVICE_ACCOUNT_JSON");
+  if (!raw) return null;
+  try {
+    const account = JSON.parse(raw);
+    const projectId = cleanCell(account.project_id);
+    const clientEmail = cleanCell(account.client_email);
+    const privateKey = String(account.private_key || "").replace(/\\n/g, "\n");
+    if (!projectId || !clientEmail || !privateKey) return null;
+    return { projectId: projectId, clientEmail: clientEmail, privateKey: privateKey };
+  } catch (error) {
+    console.error("FIREBASE_SERVICE_ACCOUNT_JSONの解析に失敗しました", error);
+    return null;
+  }
+}
+
+// 通知の失敗でメッセージの送信が失敗にならないよう、エラーは記録するだけにする。
+// ロック画面に内容が出ないように、通知には送り主の名前だけを入れる
+function sendWebPushNotification(ss, toUserId, fromUserId, senderName) {
+  try {
+    const deviceSheet = ss.getSheetByName(WEB_PUSH_SHEET);
+    if (!deviceSheet || deviceSheet.getLastRow() <= 1) return;
+    const rows = deviceSheet.getRange(2, 1, deviceSheet.getLastRow() - 1, 5).getValues();
+    const targets = rows.filter(row => cleanCell(row[0]) === cleanCell(toUserId) && cleanCell(row[1]) && cleanCell(row[4]) !== "無効");
+    if (targets.length === 0) return;
+    const account = getWebPushServiceAccount();
+    if (!account) { console.error("Web通知：FIREBASE_SERVICE_ACCOUNT_JSONがありません"); return; }
+    const accessToken = getFcmAccessToken(account, "web-push-access-token");
+    if (!accessToken) return;
+    const endpoint = "https://fcm.googleapis.com/v1/projects/" + encodeURIComponent(account.projectId) + "/messages:send";
+    const content = {
+      title: "平工マッチング",
+      body: (cleanCell(senderName) || "ほかのユーザー").slice(0, 60) + " さんからメッセージが届きました",
+      url: "messages.html",
+      tag: "chat-" + base64UrlEncode(cleanCell(fromUserId)).slice(0, 80)
+    };
+    targets.slice(-5).forEach(row => {
+      const response = UrlFetchApp.fetch(endpoint, {
+        method: "post",
+        contentType: "application/json",
+        headers: { Authorization: "Bearer " + accessToken },
+        payload: JSON.stringify({ message: { token: cleanCell(row[1]), data: content, webpush: { headers: { Urgency: "high", TTL: "86400" } } } }),
+        muteHttpExceptions: true
+      });
+      const code = response.getResponseCode();
+      if (code >= 200 && code < 300) return;
+      const responseText = response.getContentText();
+      console.error("Web通知の送信失敗", code, responseText.slice(0, 500));
+      if (code === 404 || /UNREGISTERED/.test(responseText)) markAndroidDeviceTokenInvalid(deviceSheet, row[1]);
+    });
+  } catch (error) {
+    console.error("Web通知の送信エラー", error);
+  }
+}
+
+function revokeAllWebPushTokens(ss, userId) {
+  const deviceSheet = ss.getSheetByName(WEB_PUSH_SHEET);
+  if (!deviceSheet || deviceSheet.getLastRow() <= 1) return;
+  const owners = deviceSheet.getRange(2, 1, deviceSheet.getLastRow() - 1, 1).getValues();
+  owners.forEach((row, index) => {
+    if (cleanCell(row[0]) === userId) deviceSheet.getRange(index + 2, 5).setValue("無効");
+  });
 }
 
 function sendAndroidPushNotification(ss, toUserId, title, body, chatTargetUserId) {

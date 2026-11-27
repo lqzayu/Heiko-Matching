@@ -148,7 +148,38 @@ const HEIKO_REMEMBER_DAYS = 30;
 // 書き込めなかったりするため、sessionStorage だけで判定するとログイン直後に追い出されてログイン画面に戻り続けてしまう
 const HEIKO_SESSION_HOURS = 12;
 
+// ログアウトした端末に通知が届き続けないよう、この端末の通知先を解除する
+function releaseHeikoPush() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem("heiko-push") || "null"); } catch (error) { saved = null; }
+    if (!saved) return;
+    localStorage.removeItem("heiko-push");
+    const sessionToken = localStorage.getItem("sessionToken");
+    if (sessionToken && saved.token) {
+        fetch("https://script.google.com/macros/s/AKfycbyQgkizdGw9MiZjxtlxAHpfMXw5ehLfj9HkzDcR9YLRo1Cm11kfEp4cWYqnNBdDR96w/exec", {
+            method: "POST",
+            body: JSON.stringify({ mode: "unregisterWebPush", userId: saved.userId, fcmToken: saved.token, sessionToken }),
+            keepalive: true
+        }).catch(() => {});
+    }
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistration()
+            .then(registration => registration && registration.pushManager && registration.pushManager.getSubscription())
+            .then(subscription => subscription && subscription.unsubscribe())
+            .catch(() => {});
+    }
+}
+
+function installHeikoNotify() {
+    if (document.getElementById("heiko-notify-script")) return;
+    const script = document.createElement("script");
+    script.id = "heiko-notify-script";
+    script.src = "notify.js?v=20261127p";
+    document.body.appendChild(script);
+}
+
 function clearHeikoSession() {
+    releaseHeikoPush();
     HEIKO_SESSION_KEYS.forEach(key => localStorage.removeItem(key));
     localStorage.removeItem(HEIKO_REMEMBER_UNTIL_KEY);
     localStorage.removeItem(HEIKO_SESSION_ONLY_KEY);
@@ -904,7 +935,7 @@ function installHeikoSharedStyles() {
 
 (function installUsageLogging() {
     const nativeFetch = window.fetch.bind(window);
-    const ignoredModes = new Set(["recordUsageLog", "recordUsageLogs", "heartbeat", "login", "register", "verifyEmail", "resendVerificationCode", "forgotPassword", "resetPassword", "verify_face_1toN", "verify_face_for_user", "firebaseCustomToken", "getMessages", "getUnreadCount", "getNotificationSummary", "getLatestIncomingMessage", "markAsRead"]);
+    const ignoredModes = new Set(["recordUsageLog", "recordUsageLogs", "heartbeat", "login", "register", "verifyEmail", "resendVerificationCode", "forgotPassword", "resetPassword", "verify_face_1toN", "verify_face_for_user", "firebaseCustomToken", "getMessages", "getUnreadCount", "getNotificationSummary", "getLatestIncomingMessage", "markAsRead", "getBlockedUsers", "getPushConfig", "registerWebPush", "unregisterWebPush"]);
     const usageLogQueue = [];
     let usageLogTimer = null;
     let usageLogUrl = "";
@@ -1434,6 +1465,7 @@ document.addEventListener("DOMContentLoaded", () => {
     installHeikoSideNav();
     installHeikoPwaSupport();
     installHeikoFooterNavigation();
+    installHeikoNotify();
     if (document.body && document.body.dataset.page === "main") {
         if ("requestIdleCallback" in window) {
             window.requestIdleCallback(prefetchHeikoPages, { timeout: 3000 });

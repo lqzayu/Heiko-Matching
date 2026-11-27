@@ -278,6 +278,7 @@
         markAsRead,
         unsendMessage,
         readHidden,
-        hideConversation
+        hideConversation,
+        getApp
     };
 })();

@@ -429,14 +429,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127fb">
-    <script src="ui.js?v=20261127fb"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127p">
+    <script src="ui.js?v=20261127p"></script>
     <script src="online.js?v=20260917b" defer></script>
     <script>window.HEIKO_FIREBASE_CHAT_ENABLED = true;</script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js" defer></script>
-    <script src="firebase-chat.js?v=20261117hide" defer></script>
+    <script src="firebase-chat.js?v=20261127n" defer></script>
 </head>
 
 <body data-page="messages">
@@ -501,7 +501,6 @@
             "linear-gradient(135deg, #0d9488 0%, #115e59 100%)",
             "linear-gradient(135deg, #6366f1 0%, #4338ca 100%)"
         ];
-        let unreadRequest = null;
         let partnersRequest = null;
         let unreadPollTimer = null;
         let firebaseReady = false;
@@ -510,9 +509,12 @@
         let firebaseHidden = {};
         let cachedGasPartners = [];
         let lastPartnerSignature = "";
-        let gasUnreadCount = 0;
         const partnerNameCache = new Map();
         const partnerImageCache = new Map();
+        // 最初の表示は、データがそろってから一度だけ行う（取得できるたびに出し直すと画面がちらつく）
+        let initialListReady = false;
+        let hasListData = false;
+        const INITIAL_WAIT_MS = 4000; // これより遅いときは、取得できた分だけ先に表示する
         const legacyChatTarget = localStorage.getItem("chatTarget") || "";
 
         async function postGas(payload, timeoutMs = 12000) {
@@ -587,7 +589,6 @@
                 const list = document.getElementById("partner-list");
                 renderPartnerList(cachedGasPartners, list);
                 enrichPartnerNames(cachedGasPartners, list);
-                renderUnreadBadge();
             }, error => console.warn("Firebase受信箱の購読エラー:", error));
         }
 
@@ -600,15 +601,6 @@
                 const hiddenAt = Number(firebaseHidden[window.HeikoFirebaseChat.getFirebaseUid(partner)] || 0);
                 return !hiddenAt || !message.sentAt || Number(message.sentAt) > hiddenAt;
             });
-        }
-
-        function renderUnreadBadge() {
-            const badge = document.getElementById("unread-badge");
-            if (!badge) return;
-            const userId = localStorage.getItem("userEmail");
-            const count = gasUnreadCount + getVisibleFirebaseMessages(firebaseInbox).filter(message => message.to === userId && !message.isRead && !message.isUnsent).length;
-            badge.innerText = count > 99 ? "99+" : String(count);
-            badge.style.display = count > 0 ? "inline-block" : "none";
         }
 
         function mergePartnerLists(gasPartners, firebaseMessages) {
@@ -685,74 +677,110 @@
             }
         }
 
-        function renderPartnerList(gasPartners, listDiv) {
-            const partners = mergePartnerLists(gasPartners, firebaseInbox)
-                .map(partner => ({ ...partner, profileImage: partnerImageCache.get(partner.email) || partner.profileImage || "" }));
-            const signature = JSON.stringify(partners);
-            if (signature === lastPartnerSignature) return;
-            lastPartnerSignature = signature;
-            listDiv.innerHTML = "";
-            if (partners.length === 0) {
-                listDiv.innerHTML = `<div class="empty-message">メッセージはまだありません。<br>ホーム画面から気になる人にチャットを送ってみましょう！</div>`;
-                return;
-            }
-            partners.forEach((partner, index) => {
-                const initial = partner.name ? partner.name.charAt(0) : "未";
-                const avatarBg = bgGradients[index % bgGradients.length];
-                const item = document.createElement("div");
-                item.className = "partner-item";
-                item.onclick = () => openChat(partner.email, partner.name);
-                item.tabIndex = 0;
-                item.setAttribute("role", "link");
-                item.setAttribute("aria-label", `${partner.name || partner.email}とのチャットを開く`);
-                item.addEventListener("keydown", event => {
-                    if (event.target === item && (event.key === "Enter" || event.key === " ")) {
-                        event.preventDefault();
-                        openChat(partner.email, partner.name);
-                    }
-                });
-                const avatarRing = document.createElement("div");
-                avatarRing.className = "avatar-ring";
-                const avatar = document.createElement("div");
-                avatar.className = "partner-avatar";
-                avatar.style.background = avatarBg;
-                avatar.textContent = initial;
-                heikoApplyAvatar(avatar, partner.profileImage);
-                avatarRing.appendChild(avatar);
-                const contentBox = document.createElement("div");
-                contentBox.className = "partner-content-box";
-                const name = document.createElement("div");
-                name.className = "partner-name";
-                name.textContent = partner.name;
-                const email = document.createElement("div");
-                email.className = "partner-email";
-                email.textContent = partner.email;
-                const preview = document.createElement("div");
-                preview.className = "partner-preview";
-                preview.textContent = partner.preview || "メッセージを開く";
-                const sentLabel = formatPartnerTime(partner.sentAt);
+        function createPartnerItem(email, colorIndex) {
+            const item = document.createElement("div");
+            item.className = "partner-item";
+            item.dataset.partnerEmail = email;
+            item.tabIndex = 0;
+            item.setAttribute("role", "link");
+            item.onclick = () => openChat(email, item.dataset.partnerName);
+            item.addEventListener("keydown", event => {
+                if (event.target === item && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    openChat(email, item.dataset.partnerName);
+                }
+            });
+            const avatarRing = document.createElement("div");
+            avatarRing.className = "avatar-ring";
+            const avatar = document.createElement("div");
+            avatar.className = "partner-avatar";
+            avatar.style.background = bgGradients[colorIndex % bgGradients.length];
+            avatarRing.appendChild(avatar);
+            const contentBox = document.createElement("div");
+            contentBox.className = "partner-content-box";
+            const name = document.createElement("div");
+            name.className = "partner-name";
+            const emailLine = document.createElement("div");
+            emailLine.className = "partner-email";
+            const preview = document.createElement("div");
+            preview.className = "partner-preview";
+            contentBox.append(name, emailLine, preview);
+            const arrow = document.createElement("div");
+            arrow.className = "arrow-badge";
+            arrow.textContent = "開く ➔";
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "partner-delete-button";
+            deleteButton.innerText = "削除";
+            deleteButton.addEventListener("click", event => {
+                event.stopPropagation();
+                deleteChatPartner(email, deleteButton);
+            });
+            item.append(avatarRing, contentBox, arrow, deleteButton);
+            return item;
+        }
+
+        // 変わった部分だけを書き換える（同じ内容を書き直さない）
+        function updatePartnerItem(item, partner) {
+            const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
+            const displayName = partner.name || partner.email;
+            item.dataset.partnerName = partner.name || "";
+            item.setAttribute("aria-label", `${displayName}とのチャットを開く`);
+            setText(item.querySelector(".partner-name"), partner.name || "");
+            const sentLabel = formatPartnerTime(partner.sentAt);
+            const emailLine = item.querySelector(".partner-email");
+            const emailKey = `${partner.email}|${sentLabel}`;
+            if (emailLine.dataset.key !== emailKey) {
+                emailLine.dataset.key = emailKey;
+                emailLine.textContent = partner.email;
                 if (sentLabel) {
                     const time = document.createElement("span");
                     time.className = "partner-time";
                     time.textContent = `・${sentLabel}`;
-                    email.appendChild(time);
+                    emailLine.appendChild(time);
                 }
-                contentBox.append(name, email, preview);
-                const arrow = document.createElement("div");
-                arrow.className = "arrow-badge";
-                arrow.textContent = "開く ➔";
-                item.append(avatarRing, contentBox, arrow);
-                const deleteButton = document.createElement("button");
-                deleteButton.type = "button";
-                deleteButton.className = "partner-delete-button";
-                deleteButton.innerText = "削除";
-                deleteButton.addEventListener("click", event => {
-                    event.stopPropagation();
-                    deleteChatPartner(partner.email, deleteButton);
-                });
-                item.appendChild(deleteButton);
-                listDiv.appendChild(item);
+            }
+            setText(item.querySelector(".partner-preview"), partner.preview || "メッセージを開く");
+            const avatar = item.querySelector(".partner-avatar");
+            const initial = partner.name ? partner.name.charAt(0) : "未";
+            const image = partner.profileImage || "";
+            if (avatar.dataset.initial === initial && avatar.dataset.image === image) return;
+            avatar.dataset.initial = initial;
+            avatar.dataset.image = image;
+            avatar.classList.remove("has-image");
+            avatar.textContent = initial;
+            heikoApplyAvatar(avatar, image);
+        }
+
+        function renderPartnerList(gasPartners, listDiv) {
+            if (!initialListReady) return;
+            const partners = mergePartnerLists(gasPartners, firebaseInbox)
+                .map(partner => ({ ...partner, profileImage: partnerImageCache.get(partner.email) || partner.profileImage || "" }));
+            const signature = JSON.stringify(partners.map(p => [p.email, p.name, p.preview, formatPartnerTime(p.sentAt), p.profileImage]));
+            if (signature === lastPartnerSignature) return;
+            lastPartnerSignature = signature;
+            if (partners.length === 0) {
+                listDiv.innerHTML = `<div class="empty-message">メッセージはまだありません。<br>ホーム画面から気になる人にチャットを送ってみましょう！</div>`;
+                return;
+            }
+            const existing = new Map();
+            Array.from(listDiv.children).forEach(child => {
+                if (child.dataset.partnerEmail) existing.set(child.dataset.partnerEmail, child);
+                else child.remove(); // スケルトンや案内の文
             });
+            partners.forEach((partner, index) => {
+                const item = existing.get(partner.email) || createPartnerItem(partner.email, index);
+                existing.delete(partner.email);
+                updatePartnerItem(item, partner);
+                if (listDiv.children[index] !== item) listDiv.insertBefore(item, listDiv.children[index] || null);
+            });
+            existing.forEach(item => item.remove());
+        }
+
+        function showInitialList(listDiv) {
+            if (initialListReady || !hasListData) return;
+            initialListReady = true;
+            renderPartnerList(cachedGasPartners, listDiv);
         }
 
         async function loadChatPartnersOnce() {
@@ -760,6 +788,8 @@
             const listDiv = document.getElementById("partner-list");
             let gasPartners = cachedGasPartners;
             let hasRendered = false;
+            // 受信できた内容がそろうのを待つ。時間がかかるときは、その時点の内容を表示する
+            const waitTimer = initialListReady ? null : setTimeout(() => showInitialList(listDiv), INITIAL_WAIT_MS);
             if (!lastPartnerSignature && !listDiv.querySelector(".sk-wrap")) listDiv.innerHTML = heikoSkeleton.list(4);
 
             const firebaseTask = (async () => {
@@ -767,8 +797,8 @@
                     if (firebaseReady && !firebaseInboxUnsubscribe) firebaseInbox = await window.HeikoFirebaseChat.readInbox(myEmail);
                     else await setupFirebaseInbox();
                     if (firebaseReady) {
-                        renderPartnerList(gasPartners, listDiv);
-                        enrichPartnerNames(gasPartners, listDiv);
+                        hasListData = true;
+                        renderPartnerList(cachedGasPartners, listDiv);
                         hasRendered = true;
                     }
                 } catch (error) {
@@ -781,8 +811,8 @@
                 if (result.status !== "success") throw new Error(result.message || "一覧を取得できませんでした");
                 gasPartners = Array.isArray(result.message) ? result.message : [];
                 cachedGasPartners = gasPartners;
+                hasListData = true;
                 renderPartnerList(gasPartners, listDiv);
-                enrichPartnerNames(gasPartners, listDiv);
                 hasRendered = true;
             } catch (error) {
                 console.warn("GAS一覧取得エラー:", error);
@@ -790,41 +820,31 @@
                     try {
                         await setupFirebaseInbox();
                         if (firebaseReady) {
+                            hasListData = true;
                             renderPartnerList(gasPartners, listDiv);
-                            enrichPartnerNames(gasPartners, listDiv);
                             hasRendered = true;
                         }
                     } catch (retryError) {
                         console.warn("Firebase一覧の再試行に失敗しました:", retryError);
                     }
                 }
-                if (!hasRendered) listDiv.innerHTML = `<div class="empty-message">メッセージを取得できませんでした。上部の更新ボタンで再試行してください。</div>`;
+                if (!hasRendered && !hasListData) listDiv.innerHTML = `<div class="empty-message">メッセージを取得できませんでした。上部の更新ボタンで再試行してください。</div>`;
             }
 
-            firebaseTask.catch(error => console.warn("Firebase一覧処理エラー:", error));
+            await withDeadline(firebaseTask, 10000, "Firebase一覧の取得が時間切れになりました").catch(error => console.warn(error.message));
+            if (!hasListData) {
+                clearTimeout(waitTimer);
+                return;
+            }
+            // 名前とアイコンもそろえてから表示する（2回目以降は変わった部分だけが書き換わる）
+            await enrichPartnerNames(cachedGasPartners, listDiv);
+            clearTimeout(waitTimer);
+            showInitialList(listDiv);
         }
 
+        // 未読の数と新着の知らせは notify.js がまとめて行う
         async function updateUnreadBadge() {
-            const myEmail = localStorage.getItem("userEmail");
-            const badge = document.getElementById("unread-badge");
-            if (!myEmail || !badge || unreadRequest) return unreadRequest;
-
-            unreadRequest = (async () => {
-                try {
-                    const result = await postGas({ mode: "getUnreadCount", email: myEmail });
-
-                    if (result.status === "success" && result.message) {
-                        gasUnreadCount = Number(result.message.unreadCount) || 0;
-                        renderUnreadBadge();
-                    }
-                } catch (e) {
-                    console.error("未読チェックエラー:", e);
-                } finally {
-                    unreadRequest = null;
-                }
-            })();
-
-            return unreadRequest;
+            if (window.HeikoNotify) await window.HeikoNotify.refresh();
         }
 
         // 最後のやり取りがいつかを一目でわかるようにする（今日は時刻、昨日は「昨日」、それ以前は日付）

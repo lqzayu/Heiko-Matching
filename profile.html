@@ -489,8 +489,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127fb">
-    <script src="ui.js?v=20261127fb"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127p">
+    <script src="ui.js?v=20261127p"></script>
+    <script src="tour.js?v=20261127p" defer></script>
     <script src="face-camera.js?v=20261118lazy"></script>
     <script src="online.js?v=20260917b" defer></script>
 </head>
@@ -669,7 +670,6 @@
         let lastFaceCheck = 0;
         let lastFaceSeen = 0;
         let cameraSession = 0;
-        let unreadRequest = null;
         let unreadPollTimer = null;
         let faceCountdownTimer = null;
         const faceCheckInterval = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 100 : 66;
@@ -842,32 +842,9 @@
             }
         }
 
+        // 未読の数と新着の知らせは notify.js がまとめて行う
         async function updateUnreadBadge() {
-            const myEmail = localStorage.getItem("userEmail");
-            const badge = document.getElementById("unread-badge");
-            if (!myEmail || !badge || unreadRequest) return unreadRequest;
-
-            unreadRequest = (async () => {
-                try {
-                    const result = await postGas({ mode: "getUnreadCount", email: myEmail });
-
-                    if (result.status === "success" && result.message) {
-                        const count = result.message.unreadCount || 0;
-                        if (count > 0) {
-                            badge.innerText = count > 99 ? "99+" : count;
-                            badge.style.display = "inline-block";
-                        } else {
-                            badge.style.display = "none";
-                        }
-                    }
-                } catch (e) {
-                    console.error("未読チェックエラー:", e);
-                } finally {
-                    unreadRequest = null;
-                }
-            })();
-
-            return unreadRequest;
+            if (window.HeikoNotify) await window.HeikoNotify.refresh();
         }
 
         function previewImage(event) {

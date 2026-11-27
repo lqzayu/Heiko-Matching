@@ -13,6 +13,7 @@
         { target: () => document.getElementById("search-input"), title: "キーワードで絞り込む", body: "教科やタグ（例：数学、1年）を入れると、合う募集だけが表示されます。" },
         { target: () => nav("recruit"), title: "自分で募集を出す", body: "「こんな人と勉強したい」を投稿すると、ほかの人から声がかかります。" },
         { target: () => nav("messages"), title: "メッセージ", body: "やり取りはここにまとまります。新しいメッセージが届くと数字が出ます。" },
+        { target: () => nav("profile"), title: "新着の通知", body: "メッセージが届くと画面の上に知らせが出ます。サイトを閉じていても受け取るには、マイページの「通知設定」でプッシュ通知をオンにします。そこの「設定のしかたを見る」で手順を確認できます。" },
         { target: () => nav("events"), title: "学校行事", body: "テストや行事の予定をカレンダーで確認できます。ホーム画面にも、これから1か月の行事が表示されます。" },
         { target: () => nav("ai"), title: "AI学習相談", body: "教科や困っていることを伝えると、AIがあなたに合った勉強方法を提案します。" },
         { target: () => nav("jm"), title: "JM計算", body: "持っている資格を選ぶと、ジュニアマイスターの点数と、次のランクに必要なおすすめの資格がわかります。" },
@@ -22,6 +23,7 @@
     ];
 
     let index = 0, root, spot, pop, arrow, current;
+    let activeSteps = STEPS, options = {}; // いま表示している案内（ホームの案内か、呼び出し元が渡した案内）
 
     function build() {
         root = document.createElement("div");
@@ -53,7 +55,7 @@
     }
 
     // 画面にない部品（狭い画面で隠れている等）の手順は飛ばす
-    function steps() { return STEPS.filter(step => !step.target || visible(step.target())); }
+    function steps() { return activeSteps.filter(step => !step.target || visible(step.target())); }
 
     function onKey(event) {
         if (!root) return;
@@ -71,8 +73,9 @@
         root.querySelector("#heiko-tour-title").textContent = step.title;
         root.querySelector(".heiko-tour-body").textContent = step.body;
         root.querySelector(".heiko-tour-back").hidden = index === 0;
-        root.querySelector(".heiko-tour-next").textContent = index === list.length - 1 ? "はじめる" : "次へ";
-        if (current) current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        root.querySelector(".heiko-tour-next").textContent = index === list.length - 1 ? (options.lastLabel || "はじめる") : "次へ";
+        if (current && options.scrollBlock === "start") current.style.scrollMarginTop = "20px";
+        if (current) current.scrollIntoView({ block: options.scrollBlock || "nearest", behavior: "smooth" });
         pop.classList.remove("is-in"); void pop.offsetWidth; pop.classList.add("is-in");
         place();
         setTimeout(place, 350);
@@ -110,7 +113,10 @@
     }
 
     function finish() {
-        try { localStorage.setItem(DONE_KEY(), "1"); } catch (error) { /* 保存できなくても閉じる */ }
+        // 「見た」の記録は、ホームの案内だけに残す
+        if (activeSteps === STEPS) {
+            try { localStorage.setItem(DONE_KEY(), "1"); } catch (error) { /* 保存できなくても閉じる */ }
+        }
         document.removeEventListener("keydown", onKey);
         window.removeEventListener("resize", place);
         window.removeEventListener("scroll", place);
@@ -118,8 +124,11 @@
         root = null;
     }
 
-    window.startHeikoTour = function () {
+    // 引数なしならホームの案内。{ steps, lastLabel, scrollBlock } を渡すと、ほかの画面の案内を出せる
+    window.startHeikoTour = function (custom) {
         if (root) return;
+        options = custom && Array.isArray(custom.steps) ? custom : {};
+        activeSteps = options.steps || STEPS;
         if (typeof window.closeUsageGuide === "function") { try { window.closeUsageGuide(); } catch (error) { /* 開いていなければ何もしない */ } }
         build();
         go(0);

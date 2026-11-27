@@ -14,8 +14,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127fb">
-    <script src="ui.js?v=20261127fb"></script>
+    <link rel="stylesheet" href="theme.css?v=20261127p">
+    <script src="ui.js?v=20261127p"></script>
 </head>
 <body data-page="privacy">
 <div style="margin-bottom: 20px;">
@@ -31,6 +31,7 @@
         <li>パスワード（安全性を確保するため、不可逆的なハッシュ化処理を行った上で保存します）</li>
         <li>顔認証ログイン機能のために取得する顔の特徴量データ（数値化されたランドマークデータ等）</li>
         <li>LINEアカウントの連携に必要な情報（LINE User ID等）</li>
+        <li>プッシュ通知をオンにした場合の、通知の送り先となる端末ごとの識別情報（通知用トークン）</li>
         <li>ユーザーがサービス内で投稿、登録、またはメッセージ送信等を行った内容</li>
         <li>アクセスログ、IPアドレス、ブラウザ情報等の利用状況に関する技術的情報</li>
     </ul>
@@ -39,7 +40,7 @@
     <p>収集した情報は、以下の目的のために利用し、目的外の利用は行いません。</p>
     <ul>
         <li>当サービスの提供、維持、改善および本人認証（顔認証・メール認証等）のため</li>
-        <li>ユーザー間のメッセージング機能および通知機能（LINE通知等）を円滑に動作させるため</li>
+        <li>ユーザー間のメッセージング機能および通知機能（LINE通知、プッシュ通知等）を円滑に動作させるため</li>
         <li>利用登録の受付、本人確認、アカウント管理のため</li>
         <li>重要なお知らせ、規約変更の通知、問い合わせへの対応を行うため</li>
         <li>不正利用、規約違反行為、トラブルの防止およびセキュリティ確保のため</li>
@@ -58,7 +59,7 @@
     </ul>
 
     <h2>第5条（個人情報の外部委託・クラウドの利用）</h2>
-    <p>当サービスは、Web画面の配信にGitHub Pages、ユーザー・募集・画像・管理処理にGoogleスプレッドシート、Google Apps Script（GAS）およびGoogle Drive、テキストチャットにFirebase Realtime Databaseを利用しています。サービス提供に必要な情報は、用途に応じてこれらのクラウドサービスへ保存または送信されます。各外部プラットフォームのセキュリティ基準に準拠し、適切な安全管理に努めます。</p>
+    <p>当サービスは、Web画面の配信にGitHub Pages、ユーザー・募集・画像・管理処理にGoogleスプレッドシート、Google Apps Script（GAS）およびGoogle Drive、テキストチャットにFirebase Realtime Database、プッシュ通知の配信にFirebase Cloud Messagingを利用しています。サービス提供に必要な情報は、用途に応じてこれらのクラウドサービスへ保存または送信されます。各外部プラットフォームのセキュリティ基準に準拠し、適切な安全管理に努めます。</p>
 
     <h2>第6条（安全管理措置）</h2>
     <p>当サービスは、収集した情報の紛失、盗用、改ざん、漏洩等を防止するため、SSL/TLSによる暗号化通信の導入、パスワードのハッシュ化、アクセス制限などの必要なセキュリティ対策を講じます。</p>

@@ -1360,9 +1360,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..800&family=Noto+Sans+JP:wght@400..800&display=swap">
-    <link rel="stylesheet" href="theme.css?v=20261127fb">
-    <script src="ui.js?v=20261127fb"></script>
-    <script src="tour.js?v=20261126c" defer></script>
+    <link rel="stylesheet" href="theme.css?v=20261127p">
+    <script src="ui.js?v=20261127p"></script>
+    <script src="tour.js?v=20261127p" defer></script>
     <script src="online.js?v=20260917b" defer></script>
     <script src="school-events.js?v=20261120b"></script>
 </head>
@@ -1374,15 +1374,6 @@
         <button onclick="exitImpersonation()" style="margin-left: 12px; background: #854d0e; color: #ffffff; border: none; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700;">
             管理者ダッシュボードに戻る
         </button>
-    </div>
-
-    <div id="toast-notification" class="toast-notification" onclick="clickToast()">
-        <div class="toast-icon">💬</div>
-        <div class="toast-content">
-            <div class="toast-title">新着メッセージ</div>
-            <div class="toast-sender" id="toast-sender-name">ユーザー</div>
-            <div class="toast-text" id="toast-text-body">メッセージが届きました</div>
-        </div>
     </div>
 
     <header class="navbar">
@@ -1732,13 +1723,9 @@
 
         const GAS_URL = "https://script.google.com/macros/s/AKfycbyQgkizdGw9MiZjxtlxAHpfMXw5ehLfj9HkzDcR9YLRo1Cm11kfEp4cWYqnNBdDR96w/exec";
 
-        let lastMessageTime = 0;
-        let activeTargetEmail = "";
         let allOtherPosts = [];
         let countdownTimer = null;
-        let notificationRequest = null;
         let recruitmentsRequest = null;
-        let notificationPollTimer = null;
 
         function createRequestId(prefix = "msg") {
             if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
@@ -1746,7 +1733,7 @@
         }
 
         async function fetchGas(payload, timeoutMs = 12000) {
-            const readModes = ["getUserProfile", "getRecruitments", "getNotificationSummary"];
+            const readModes = ["getUserProfile", "getRecruitments"];
             const canRetry = readModes.includes(payload && payload.mode);
             const maxAttempts = canRetry ? 2 : 1;
             let lastError;
@@ -2524,81 +2511,19 @@
             location.href = 'chat.html';
         }
 
-        async function updateNotificationSummary() {
-            const myEmail = localStorage.getItem("userEmail");
-            const badge = document.getElementById("unread-badge");
-            if (!myEmail || !badge || notificationRequest) return notificationRequest;
-
-            notificationRequest = (async () => {
-                try {
-                    const result = await fetchGas({ mode: "getNotificationSummary", email: myEmail }, 20000);
-                    const count = result.message.unreadCount || 0;
-                    badge.innerText = count > 99 ? "99+" : count;
-                    badge.style.display = count > 0 ? "inline-block" : "none";
-
-                    const msg = result.message.latestIncoming;
-                    if (!msg) return;
-
-                    if (lastMessageTime === 0) {
-                        lastMessageTime = msg.time;
-                    } else if (msg.time > lastMessageTime) {
-                        lastMessageTime = msg.time;
-                        activeTargetEmail = msg.fromEmail;
-                        showToast(msg.fromName, msg.text);
-                    }
-                } catch (e) {
-                    if (!e || e.name !== "AbortError") console.error("通知情報の取得エラー:", e);
-                } finally {
-                    notificationRequest = null;
-                }
-            })();
-
-            return notificationRequest;
-        }
-
-        function showToast(senderName, text) {
-            document.getElementById("toast-sender-name").innerText = String(senderName || "ユーザー").trim() || "ユーザー";
-            document.getElementById("toast-text-body").innerText = String(text || "");
-            const toast = document.getElementById("toast-notification");
-
-            toast.classList.add("show");
-
-            clearTimeout(showToast.hideTimer);
-            showToast.hideTimer = setTimeout(() => {
-                toast.classList.remove("show");
-            }, 5000);
-        }
-
-        function clickToast() {
-            if (activeTargetEmail) {
-                startChat(activeTargetEmail);
-            }
-        }
-
         function logout() {
             clearHeikoSession();
             window.location.href = "index.html";
         }
 
-        function startMainPolling() {
-            if (notificationPollTimer) return;
-            notificationPollTimer = setInterval(() => {
-                if (document.visibilityState === "visible") updateNotificationSummary();
-            }, 20000);
-        }
-
         function stopMainPolling() {
-            clearInterval(notificationPollTimer);
-            notificationPollTimer = null;
             clearInterval(countdownTimer);
             countdownTimer = null;
         }
 
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible") {
-                updateNotificationSummary();
                 startCountdownTimer();
-                startMainPolling();
             } else {
                 stopMainPolling();
             }
@@ -2687,7 +2612,6 @@
 
             loadRecruitments();
             window.setTimeout(() => refreshUserProfile(currentUserId), 250);
-            window.setTimeout(() => updateNotificationSummary(), 500);
 
             const pageParams = new URLSearchParams(window.location.search);
             const requestedTab = pageParams.get("tab");
@@ -2708,8 +2632,6 @@
             if (pageParams.get("guide") === "1") {
                 requestAnimationFrame(openUsageGuide);
             }
-
-            startMainPolling();
         });
     </script>
 </body>
