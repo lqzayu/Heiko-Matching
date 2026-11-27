@@ -455,6 +455,29 @@
     <link rel="stylesheet" href="theme.css?v=20261127x">
     <style>
         /* 管理者ページのレイアウト（色は theme.css と既存の指定をそのまま使う） */
+        .cv-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
+        .cv-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--ui-muted, #64748b); }
+        .cv-field input { min-height: 44px; padding: 9px 12px; font-size: 15px; box-sizing: border-box; width: 100%; }
+        .cv-reason { grid-column: 1 / -1; }
+        #cv-open { justify-self: start; }
+        .cv-status { margin: 10px 0 0; font-size: 13px; font-weight: 700; color: var(--ui-muted, #64748b); }
+        .cv-status:empty { display: none; }
+        .cv-viewer { margin-top: 14px; border: 1px solid var(--ui-line, #e2e8f0); border-radius: 14px; overflow: hidden; }
+        .cv-viewer[hidden] { display: none; }
+        .cv-viewer-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--ui-line, #e2e8f0); }
+        .cv-list { list-style: none; margin: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; overscroll-behavior: contain; }
+        .cv-message { max-width: 82%; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--ui-line, #e2e8f0); overflow-wrap: anywhere; }
+        .cv-message.is-a { align-self: flex-start; }
+        .cv-message.is-b { align-self: flex-end; background: var(--ui-soft, #f1f5f9); }
+        .cv-message small { display: block; font-size: 11px; color: var(--ui-muted, #64748b); }
+        .cv-message p { margin: 4px 0 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+        .cv-message .cv-original { padding-top: 6px; border-top: 1px dashed var(--ui-line, #e2e8f0); color: #b45309; }
+        .cv-message a { display: inline-block; margin: 6px 10px 0 0; font-size: 13px; font-weight: 700; color: var(--ui-green, #0f766e); }
+        .cv-logs { margin-top: 14px; font-size: 13px; }
+        .cv-logs summary { cursor: pointer; font-weight: 700; }
+        .cv-logs ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.8; overflow-wrap: anywhere; }
+        .report-status-cell .btn-action-reset { margin-top: 6px; }
+        @media (max-width: 600px) { .cv-form { grid-template-columns: minmax(0, 1fr); } .cv-message { max-width: 94%; } }
         [data-page="admin"] .container { max-width: 1120px; margin: 28px auto 8px; }
 
         [data-page="admin"] .page-title-bar {
@@ -784,6 +807,33 @@
                 </div>
             </section>
 
+            <section class="panel" id="conversation-panel" aria-labelledby="conversation-title">
+                <div class="panel-head">
+                    <div>
+                        <h2 id="conversation-title">💬 会話の確認</h2>
+                        <p class="panel-note">通報への対応や安全の確認など、必要な場合だけ使ってください。読むだけで、相手の画面に既読は付きません。誰の会話を、いつ、なぜ見たかが記録されます。</p>
+                    </div>
+                </div>
+                <div class="cv-form">
+                    <label class="cv-field">利用者A<select id="cv-user-a"></select></label>
+                    <label class="cv-field">利用者B<select id="cv-user-b"></select></label>
+                    <label class="cv-field cv-reason">閲覧の理由<input id="cv-reason" type="text" maxlength="300" placeholder="例：嫌がらせの通報を確認するため" autocomplete="off"></label>
+                    <button type="button" class="btn-reload" id="cv-open" onclick="openConversation()">会話を表示</button>
+                </div>
+                <p class="cv-status" id="cv-status" aria-live="polite"></p>
+                <div class="cv-viewer" id="cv-viewer" hidden>
+                    <div class="cv-viewer-head">
+                        <strong id="cv-title"></strong>
+                        <button type="button" class="se-sub-button" onclick="closeConversation()" data-no-busy>閉じる</button>
+                    </div>
+                    <ol class="cv-list" id="cv-list"></ol>
+                </div>
+                <details class="cv-logs" id="cv-logs" ontoggle="if (this.open) loadViewLogs()">
+                    <summary>閲覧の記録（新しい順に30件）</summary>
+                    <ul id="cv-log-list"></ul>
+                </details>
+            </section>
+
             <section class="panel" aria-labelledby="contact-title">
                 <div class="panel-head">
                     <div>
@@ -1006,7 +1056,135 @@
             if (countEl) countEl.innerText = Number.isFinite(Number(count)) ? Number(count) : 0;
         }
 
+        // ---------- 会話の確認 ----------
+        function setConversationUsers(users) {
+            ["cv-user-a", "cv-user-b"].forEach(id => {
+                const select = document.getElementById(id);
+                const selected = select.value;
+                select.textContent = "";
+                select.add(new Option("選んでください", ""));
+                users.filter(u => u.userId !== ADMIN_ID).forEach(u => select.add(new Option(`${u.userId}（${u.name}）`, u.userId)));
+                if (selected) selectConversationUser(select, selected);
+            });
+        }
+
+        function selectConversationUser(select, userId) {
+            // 一覧にいない人（削除されたアカウントなど）も、控えや記録を確認できるようにする
+            if (!Array.from(select.options).some(option => option.value === userId)) select.add(new Option(`${userId}（一覧にいないユーザー）`, userId));
+            select.value = userId;
+        }
+
+        function prepareConversation(userA, userB, reason) {
+            closeConversation();
+            selectConversationUser(document.getElementById("cv-user-a"), userA);
+            selectConversationUser(document.getElementById("cv-user-b"), userB);
+            const reasonInput = document.getElementById("cv-reason");
+            reasonInput.value = reason.slice(0, 300);
+            document.getElementById("cv-status").textContent = "内容を確認して「会話を表示」を押してください。";
+            document.getElementById("conversation-panel").scrollIntoView({ block: "start", behavior: "smooth" });
+        }
+
+        function closeConversation() {
+            // 閉じたら、画面の中にも内容を残さない
+            document.getElementById("cv-list").textContent = "";
+            document.getElementById("cv-title").textContent = "";
+            document.getElementById("cv-viewer").hidden = true;
+            document.getElementById("cv-status").textContent = "";
+        }
+        window.addEventListener("pagehide", closeConversation);
+
+        // 古い GAS はこの操作を知らず「ログインの有効期限」と返す
+        function conversationError(message) {
+            return String(message || "").includes("ログインの有効期限") ? "GASを新しいバージョンでデプロイしてください" : (message || "取得できませんでした");
+        }
+
+        async function openConversation() {
+            const userA = document.getElementById("cv-user-a").value;
+            const userB = document.getElementById("cv-user-b").value;
+            const reason = document.getElementById("cv-reason").value.trim();
+            const status = document.getElementById("cv-status");
+            if (!userA || !userB || userA === userB) { status.textContent = "確認する2人の利用者を選んでください。"; return; }
+            if (reason.length < 5) { status.textContent = "閲覧の理由を5文字以上で入力してください。"; return; }
+            if (!confirm(`${userA} さんと ${userB} さんの会話を表示します。\nこの閲覧は理由とともに記録されます。よろしいですか？`)) return;
+            closeConversation();
+            const button = document.getElementById("cv-open");
+            button.disabled = true;
+            status.textContent = "読み込み中…";
+            try {
+                const result = await postGas({ mode: "adminViewConversation", adminId: ADMIN_ID, adminToken: adminToken, userA, userB, reason }, 45000);
+                if (result.status !== "success") { status.textContent = conversationError(result.message); return; }
+                renderConversation(result.message);
+                if (document.getElementById("cv-logs").open) loadViewLogs();
+            } catch (error) {
+                status.textContent = "通信エラーが発生しました。";
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        // 利用者が入力した内容は、すべて文字として表示する（textContent）
+        function renderConversation(data) {
+            const list = document.getElementById("cv-list");
+            list.textContent = "";
+            const warnings = [];
+            if (data.firebase === "failed") warnings.push("⚠️ Firebaseの会話を取得できませんでした。文字のメッセージの多くが表示されていない可能性があります。");
+            if (data.total > data.messages.length) warnings.push(`新しい順で${data.messages.length}件を表示しています（全${data.total}件）。`);
+            if (!data.messages.length) warnings.push("表示できるメッセージはありません。");
+            document.getElementById("cv-status").textContent = warnings.join(" ");
+            document.getElementById("cv-title").textContent = `${data.userA} と ${data.userB} の会話（${data.messages.length}件）`;
+            data.messages.forEach(message => {
+                const item = document.createElement("li");
+                item.className = "cv-message " + (message.from === data.userA ? "is-a" : "is-b");
+                const meta = document.createElement("small");
+                const time = message.sentAt ? new Date(message.sentAt).toLocaleString("ja-JP") : "日時不明";
+                const notes = [message.isUnsent ? "送信取り消し" : "", message.onlyInBackup ? "控えにだけ残る分" : ""].filter(Boolean);
+                meta.textContent = `${message.from}・${time}${notes.length ? "・" + notes.join("・") : ""}`;
+                item.appendChild(meta);
+                const body = document.createElement("p");
+                body.textContent = message.text;
+                if (message.text) item.appendChild(body);
+                if (message.originalText) {
+                    const original = document.createElement("p");
+                    original.className = "cv-original";
+                    original.textContent = `取り消す前の本文（控え）：${message.originalText}`;
+                    item.appendChild(original);
+                }
+                (message.attachments || []).forEach((url, index) => {
+                    if (typeof url !== "string" || !url.startsWith("https://drive.google.com/")) return;
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.target = "_blank";
+                    link.rel = "noopener noreferrer";
+                    link.textContent = `画像${index + 1}を開く`;
+                    item.appendChild(link);
+                });
+                list.appendChild(item);
+            });
+            document.getElementById("cv-viewer").hidden = false;
+            list.scrollTop = list.scrollHeight;
+        }
+
+        async function loadViewLogs() {
+            const list = document.getElementById("cv-log-list");
+            const show = text => { list.textContent = ""; const item = document.createElement("li"); item.textContent = text; list.appendChild(item); };
+            show("読み込み中…");
+            try {
+                const result = await postGas({ mode: "adminGetViewLogs", adminId: ADMIN_ID, adminToken: adminToken });
+                if (result.status !== "success") { show(conversationError(result.message)); return; }
+                if (!result.message.length) { show("閲覧の記録はありません。"); return; }
+                list.textContent = "";
+                result.message.forEach(log => {
+                    const item = document.createElement("li");
+                    item.textContent = `${new Date(log.viewedAt).toLocaleString("ja-JP")}｜${log.userA} と ${log.userB}｜${log.count}件｜${log.reason}`;
+                    list.appendChild(item);
+                });
+            } catch (error) {
+                show("通信エラーが発生しました。");
+            }
+        }
+
         function renderUsers(users) {
+            setConversationUsers(users);
             const userBody = document.getElementById("user-table-body");
             userBody.innerHTML = "";
 
@@ -1299,6 +1477,15 @@
                 });
                 select.addEventListener("change", () => updateReportStatus(String(report.reportId || ""), select.value));
                 tr.querySelector(".report-status-cell").appendChild(select);
+                if (report.reporterId && report.targetUserId && report.reporterId !== report.targetUserId) {
+                    const viewButton = document.createElement("button");
+                    viewButton.type = "button";
+                    viewButton.className = "btn-action-reset";
+                    viewButton.textContent = "会話を確認";
+                    viewButton.setAttribute("data-no-busy", "");
+                    viewButton.addEventListener("click", () => prepareConversation(String(report.reporterId), String(report.targetUserId), `通報（${report.reason}）の確認`));
+                    tr.querySelector(".report-status-cell").appendChild(viewButton);
+                }
 
                 body.appendChild(tr);
             });

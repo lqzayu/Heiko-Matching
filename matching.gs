@@ -7,6 +7,10 @@ const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getPropert
 
 const ADMIN_USER_ID = "admin";
 const WEB_PUSH_SHEET = "Web通知";
+// 管理者が会話を閲覧した記録（アプリからは消せない）
+const VIEW_LOG_SHEET = "会話閲覧ログ";
+const VIEW_LOG_HEADERS = ["閲覧日時", "利用者A", "利用者B", "閲覧の理由", "表示した件数"];
+const VIEW_MESSAGE_LIMIT = 500;
 // 削除したアカウントのIDは二度と登録させない（同じIDの別の人に、前の人の会話などが見えないようにする）
 const RETIRED_ID_SHEET = "削除済みID";
 const RETIRED_ID_HEADERS = ["IDの照合値", "記録日時", "状態"];
@@ -128,7 +132,7 @@ function doPost(e) {
     const mode = data.mode;
 
     const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword", "submitContact"];
-    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher"];
+    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher", "adminViewConversation", "adminGetViewLogs"];
     if (!publicModes.includes(mode) && !adminModes.includes(mode)) {
       const actorId = getRequestActorId(mode, data);
       const adminProfileRequest = mode === "getUserProfile" && isAdminRequest(data);
@@ -609,6 +613,50 @@ function doPost(e) {
         posts: posts,
         onlineCount: onlineUserIds.length
       });
+    }
+
+    // 管理者による会話の閲覧。読むだけで、既読を付けるなどの変更はしない
+    if (mode === "adminViewConversation") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const userA = cleanCell(data.userA).slice(0, 64);
+      const userB = cleanCell(data.userB).slice(0, 64);
+      const reason = cleanCell(data.reason);
+      if (!userA || !userB || userA === userB) return createRes("error", "確認する2人のユーザーを選んでください");
+      if (reason.length < 5 || reason.length > 300) return createRes("error", "閲覧の理由を5文字以上300文字以内で入力してください");
+
+      // 先に記録する。記録できないときは内容を返さない
+      let logSheet;
+      let logRow = 0;
+      const logLock = LockService.getScriptLock();
+      if (!logLock.tryLock(10000)) return createRes("error", "混み合っています。少し待ってからもう一度お試しください");
+      try {
+        logSheet = getOrCreateSheet(ss, VIEW_LOG_SHEET, VIEW_LOG_HEADERS);
+        logSheet.appendRow([new Date(), safeSheetText(userA, 64), safeSheetText(userB, 64), safeSheetText(reason, 300), "取得中"]);
+        logRow = logSheet.getLastRow();
+      } catch (error) {
+        console.error("会話の閲覧を記録できませんでした", error);
+        return createRes("error", "閲覧の記録を保存できないため、表示を中止しました");
+      } finally {
+        if (logLock.hasLock()) logLock.releaseLock();
+      }
+
+      const conversation = readConversationForAdmin(ss, userA, userB);
+      try {
+        logSheet.getRange(logRow, 5).setValue(conversation.messages.length);
+      } catch (error) {
+        console.error("閲覧した件数を記録できませんでした", error);
+      }
+      return createRes("success", conversation);
+    }
+
+    if (mode === "adminGetViewLogs") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const logSheet = ss.getSheetByName(VIEW_LOG_SHEET);
+      if (!logSheet || logSheet.getLastRow() <= 1) return createRes("success", []);
+      const logs = logSheet.getRange(2, 1, logSheet.getLastRow() - 1, VIEW_LOG_HEADERS.length).getValues()
+        .slice(-30).reverse()
+        .map(row => ({ viewedAt: new Date(row[0]).getTime(), userA: cleanCell(row[1]), userB: cleanCell(row[2]), reason: cleanCell(row[3]), count: cleanCell(row[4]) }));
+      return createRes("success", logs);
     }
 
     if (mode === "adminSetTeacher") {
@@ -3997,6 +4045,65 @@ function checkPossiblyReusedUserIds() {
   const candidates = findReusedUserIdCandidates(userIds, records);
   candidates.forEach(item => console.log("要確認: ユーザーID " + item.userId + " ／ 最初の記録 " + format(item.firstRecord) + " ／ 先に登録した人たちの記録は " + format(item.earliestAbove) + " 以降"));
   console.log(candidates.length ? "要確認の数: " + candidates.length : "候補は見つかりませんでした（この方法で分からない場合もあります）");
+}
+
+// ===== 管理者の会話閲覧 =====
+// シート（画像つきや予備の送信）、控え（取り消し前の本文や削除されたアカウントの分）、Firebase（文字の送信）をまとめる
+function readConversationForAdmin(ss, userA, userB) {
+  const isPair = (from, to) => (from === userA && to === userB) || (from === userB && to === userA);
+  const messages = new Map();
+  const readRows = name => {
+    const sheet = ss.getSheetByName(name);
+    return sheet && sheet.getLastRow() > 1 ? getChatRows(sheet).slice(1).filter(row => isPair(cleanCell(row[0]), cleanCell(row[1]))) : [];
+  };
+  const keyOf = (from, messageId, time) => from + "\n" + (messageId || "time-" + time);
+  const fromRow = row => ({
+    from: cleanCell(row[0]), text: String(row[2] || ""), sentAt: new Date(row[3]).getTime() || 0,
+    isUnsent: row[6] === "unsent", originalText: "", onlyInBackup: false, attachments: parseAttachmentCell(row[7])
+  });
+
+  readRows("チャット").forEach(row => {
+    const message = fromRow(row);
+    messages.set(keyOf(message.from, cleanCell(row[5]), message.sentAt), message);
+  });
+  readRows("chat-copy").forEach(row => {
+    const copy = fromRow(row);
+    const key = keyOf(copy.from, cleanCell(row[5]), copy.sentAt);
+    const live = messages.get(key);
+    if (!live) {
+      copy.onlyInBackup = true;
+      messages.set(key, copy);
+    } else if (live.isUnsent) {
+      live.originalText = copy.text;
+    }
+  });
+
+  let firebaseStatus = "ok";
+  try {
+    const token = getFirebaseAdminToken();
+    if (!token) {
+      firebaseStatus = "unset";
+    } else {
+      const path = "chats/" + [firebaseUserUid(userA), firebaseUserUid(userB)].sort().join("/");
+      const stored = firebaseDatabaseRequest(token, "get", path) || {};
+      Object.keys(stored).forEach(storedKey => {
+        const value = stored[storedKey] || {};
+        const from = cleanCell(value.from);
+        if (from !== userA && from !== userB) return;
+        const sentAt = Number(value.sentAt) || 0;
+        // Firebaseの応答が遅いと同じメッセージがシートにも保存されるので、二重に出さない
+        const key = keyOf(from, cleanCell(value.messageId) || storedKey, sentAt);
+        if (messages.has(key) && !messages.get(key).onlyInBackup) return;
+        messages.set(key, { from: from, text: String(value.text || ""), sentAt: sentAt, isUnsent: value.isUnsent === true, originalText: "", onlyInBackup: false, attachments: [] });
+      });
+    }
+  } catch (error) {
+    console.error("Firebaseの会話を取得できませんでした", error);
+    firebaseStatus = "failed";
+  }
+
+  const sorted = Array.from(messages.values()).sort((a, b) => a.sentAt - b.sentAt);
+  return { userA: userA, userB: userB, messages: sorted.slice(-VIEW_MESSAGE_LIMIT), total: sorted.length, firebase: firebaseStatus };
 }
 
 // ===== クイックリアクション =====
