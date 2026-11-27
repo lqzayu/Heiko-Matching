@@ -467,7 +467,7 @@
 
     async function startPushGuide() {
         const key = await getVapidKey();
-        if (typeof window.startHeikoTour !== "function") await loadScript("tour.js?v=20261127p");
+        if (typeof window.startHeikoTour !== "function") await loadScript("tour.js?v=20261128a");
         window.startHeikoTour({ steps: pushGuideSteps(key), lastLabel: "閉じる",
             // 縦長の画面は、対象を上に寄せて下に吹き出しの場所を空ける
             scrollBlock: window.matchMedia("(max-aspect-ratio:1/1)").matches ? "start" : "center" });

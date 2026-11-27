@@ -1853,3 +1853,31 @@ html body button.reply-cancel { flex:0 0 auto; width:34px; height:34px; min-heig
 html body .user-badge.is-teacher { background:#b45309!important; border-color:#b45309!important; color:#ffffff!important; font-weight:800; }
 html body .user-badge.is-admin { background:#6d28d9!important; border-color:#6d28d9!important; color:#ffffff!important; font-weight:800; }
 .btn-update-face[hidden] { display:none!important; }
+
+/* ===== 運営からのお知らせ ===== */
+html body .navbar button.heiko-bell { position:relative; display:inline-grid; place-items:center; flex:0 0 auto; cursor:pointer; }
+.heiko-bell svg { width:22px; height:22px; }
+.heiko-bell-badge { position:absolute; top:2px; right:1px; min-width:17px; height:17px; padding:0 4px; box-sizing:border-box; display:grid; place-items:center; border-radius:999px; background:#ef4444; color:#ffffff; font-size:10px; font-weight:800; line-height:1; }
+.heiko-bell-badge[hidden] { display:none; }
+@media (min-width:769px) and (min-aspect-ratio:1/1) {
+ html body .navbar > button.heiko-bell.heiko-bell { position:absolute; top:22px; right:10px; width:38px!important; min-width:0!important; height:38px!important; min-height:0!important; margin:0!important; padding:0!important; border:1px solid var(--ui-line)!important; border-radius:50%!important; background:var(--ui-paper)!important; color:var(--ui-ink)!important; box-shadow:none!important; }
+}
+/* アイコンだけの細いメニューでは、ロゴの下に置く */
+@media (min-width:769px) and (max-width:1199px) and (min-aspect-ratio:1/1) {
+ body:has(> .navbar > .heiko-bell) .navbar > .logo { margin-bottom:12px!important; }
+ html body .navbar > button.heiko-bell.heiko-bell { position:relative; order:1; top:0; right:0; align-self:center; margin:0 0 16px!important; }
+}
+.heiko-tour-body { max-height:42vh; overflow-y:auto; overflow-wrap:anywhere; }
+.news-dialog { width:min(560px, calc(100vw - 32px)); max-height:calc(100dvh - 48px); padding:0; border:1px solid var(--ui-line); border-radius:20px; background:var(--ui-paper); color:var(--ui-ink); box-shadow:0 30px 80px rgba(0,0,0,.3); overflow:hidden; }
+.news-dialog[open] { display:flex; flex-direction:column; }
+.news-dialog::backdrop { background:rgba(10,20,30,.55); }
+.news-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; border-bottom:1px solid var(--ui-line); }
+.news-head h2 { margin:0; font-size:17px; font-weight:800; }
+html body .news-dialog button.news-close { width:36px; height:36px; min-height:36px; margin:0; padding:0; border:0; border-radius:50%; background:var(--ui-soft); color:var(--ui-ink); box-shadow:none; font-size:20px; cursor:pointer; }
+.news-list { list-style:none; margin:0; padding:14px 20px 20px; overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:12px; }
+.news-item { padding:12px 14px; border:1px solid var(--ui-line); border-radius:12px; }
+.news-item.is-new { border-color:var(--ui-green); background:var(--ui-soft); }
+.news-item small { font-size:11px; font-weight:700; color:var(--ui-muted); }
+.news-item h3 { margin:4px 0 6px; font-size:15px; font-weight:800; overflow-wrap:anywhere; }
+.news-item p { margin:0; font-size:14px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
+.news-empty { padding:20px 0; text-align:center; color:var(--ui-muted); font-size:14px; }

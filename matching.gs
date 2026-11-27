@@ -7,6 +7,11 @@ const FIREBASE_DATABASE_URL = PropertiesService.getScriptProperties().getPropert
 
 const ADMIN_USER_ID = "admin";
 const WEB_PUSH_SHEET = "Web通知";
+// 運営からのお知らせと、利用者ごとにどこまで読んだか
+const ANNOUNCEMENT_SHEET = "お知らせ";
+const ANNOUNCEMENT_HEADERS = ["お知らせID", "配信日時", "タイトル", "本文", "状態"];
+const ANNOUNCEMENT_READ_SHEET = "お知らせ既読";
+const ANNOUNCEMENT_LIST_LIMIT = 20;
 // 管理者が会話を閲覧した記録（アプリからは消せない）
 const VIEW_LOG_SHEET = "会話閲覧ログ";
 const VIEW_LOG_HEADERS = ["閲覧日時", "利用者A", "利用者B", "閲覧の理由", "表示した件数"];
@@ -19,7 +24,7 @@ const UNAVAILABLE_ID_MESSAGE = "このユーザーIDは使用できません。�
 // 通報・問い合わせ・chat-copy は、嫌がらせなどの確認に使う記録なので残す
 const USER_DATA_SHEETS = [
   ["募集", [5]], ["チャット", [0, 1]], ["チャット非表示", [0, 1]], ["ブロック", [0, 1]], ["AIログ", [2]], ["JM計算", [0]],
-  ["リアクション", [1, 2]], ["LINE連携", [0]], ["オンライン状況", [0]], ["Web通知", [0]], ["Android通知", [0]], ["Android通知ログ", [1]]
+  ["リアクション", [1, 2]], ["LINE連携", [0]], ["オンライン状況", [0]], ["Web通知", [0]], ["Android通知", [0]], ["Android通知ログ", [1]], ["お知らせ既読", [0]]
 ];
 // ここにIDが残っていれば、以前だれかが使ったIDとみなす
 const USED_ID_TRACE_SHEETS = [
@@ -132,7 +137,7 @@ function doPost(e) {
     const mode = data.mode;
 
     const publicModes = ["register", "verifyEmail", "resendVerificationCode", "login", "verify_face_1toN", "verify_face_for_user", "forgotPassword", "resetPassword", "submitContact"];
-    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher", "adminViewConversation", "adminGetViewLogs"];
+    const adminModes = ["adminGetOverview", "adminDeletePost", "adminBanUser", "adminResetPassword", "adminClearChatHistory", "getReports", "updateReportStatus", "getDailyAnalysis", "adminExtractSchoolEvents", "adminSaveSchoolEvents", "adminDeleteSchoolEvent", "adminSyncSchoolCalendar", "adminSchoolCalendarStatus", "adminDeleteSchoolEventsBySource", "adminGetContacts", "adminUpdateContactStatus", "adminSetTeacher", "adminViewConversation", "adminGetViewLogs", "adminGetAnnouncements", "adminPublishAnnouncement", "adminDeleteAnnouncement"];
     if (!publicModes.includes(mode) && !adminModes.includes(mode)) {
       const actorId = getRequestActorId(mode, data);
       const adminProfileRequest = mode === "getUserProfile" && isAdminRequest(data);
@@ -613,6 +618,51 @@ function doPost(e) {
         posts: posts,
         onlineCount: onlineUserIds.length
       });
+    }
+
+    if (mode === "getAnnouncements") {
+      const readUpTo = getAnnouncementReadTime(ss, cleanCell(data.userId));
+      return createRes("success", readAnnouncements(ss).slice(0, ANNOUNCEMENT_LIST_LIMIT)
+        .map(item => ({ id: item.id, time: item.time, title: item.title, body: item.body, unread: item.time > readUpTo })));
+    }
+
+    if (mode === "markAnnouncementsRead") {
+      const userId = cleanCell(data.userId);
+      // 未来の時刻を指定して、これから配信する分まで既読にできないようにする
+      const upTo = Math.min(Number(data.upTo) || 0, Date.now());
+      if (!userId || upTo <= 0) return createRes("error", "お知らせを確認できませんでした");
+      if (!saveAnnouncementReadTime(ss, userId, upTo)) return createRes("error", "混み合っています。少し待ってからお試しください");
+      return createRes("success", "ANNOUNCEMENTS_READ");
+    }
+
+    if (mode === "adminGetAnnouncements") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      return createRes("success", readAnnouncements(ss).slice(0, 30));
+    }
+
+    if (mode === "adminPublishAnnouncement") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const title = cleanCell(data.title).replace(/\s+/g, " ");
+      const body = cleanCell(data.body).replace(/\r\n?/g, "\n");
+      if (!title || title.length > 60) return createRes("error", "タイトルは1〜60文字で入力してください");
+      if (!body || body.length > 1000) return createRes("error", "本文は1〜1000文字で入力してください");
+      const duplicateKey = "announcement-" + base64UrlEncode(Utilities.computeHmacSha256Signature(base64UrlEncode(title + "\n" + body), getUserTokenSecret()));
+      if (!claimCooldown(duplicateKey, 60)) return createRes("error", "同じお知らせを配信したばかりです。一覧を確認してください");
+      getOrCreateSheet(ss, ANNOUNCEMENT_SHEET, ANNOUNCEMENT_HEADERS)
+        .appendRow([Utilities.getUuid(), new Date(), safeSheetText(title, 60), safeSheetText(body, 1000), "公開"]);
+      return createRes("success", "ANNOUNCEMENT_PUBLISHED");
+    }
+
+    if (mode === "adminDeleteAnnouncement") {
+      if (!isAdminRequest(data)) return createRes("error", "管理者権限がありません。再ログインしてください");
+      const announcementId = cleanCell(data.announcementId);
+      const sheet = ss.getSheetByName(ANNOUNCEMENT_SHEET);
+      if (!announcementId || !sheet || sheet.getLastRow() <= 1) return createRes("error", "お知らせが見つかりません");
+      const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+      const index = ids.findIndex(row => cleanCell(row[0]) === announcementId);
+      if (index < 0) return createRes("error", "お知らせが見つかりません");
+      sheet.getRange(index + 2, 5).setValue("取り下げ");
+      return createRes("success", "ANNOUNCEMENT_REMOVED");
     }
 
     // 管理者による会話の閲覧。読むだけで、既読を付けるなどの変更はしない
@@ -2859,6 +2909,8 @@ function getRequestActorId(mode, data) {
     sendReaction: "from",
     getReactions: "email",
     markReactionsRead: "email",
+    getAnnouncements: "userId",
+    markAnnouncementsRead: "userId",
     notifyFirebaseMessage: "from",
     getMessages: "user1",
     unsendMessage: "userId",
@@ -4045,6 +4097,40 @@ function checkPossiblyReusedUserIds() {
   const candidates = findReusedUserIdCandidates(userIds, records);
   candidates.forEach(item => console.log("要確認: ユーザーID " + item.userId + " ／ 最初の記録 " + format(item.firstRecord) + " ／ 先に登録した人たちの記録は " + format(item.earliestAbove) + " 以降"));
   console.log(candidates.length ? "要確認の数: " + candidates.length : "候補は見つかりませんでした（この方法で分からない場合もあります）");
+}
+
+// ===== 運営からのお知らせ =====
+// 公開中のお知らせを新しい順に返す
+function readAnnouncements(ss) {
+  const sheet = ss.getSheetByName(ANNOUNCEMENT_SHEET);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, ANNOUNCEMENT_HEADERS.length).getValues()
+    .filter(row => cleanCell(row[0]) && cleanCell(row[4]) === "公開")
+    .map(row => ({ id: cleanCell(row[0]), time: new Date(row[1]).getTime() || 0, title: cleanCell(row[2]), body: cleanCell(row[3]) }))
+    .sort((a, b) => b.time - a.time);
+}
+
+function getAnnouncementReadTime(ss, userId) {
+  const sheet = ss.getSheetByName(ANNOUNCEMENT_READ_SHEET);
+  if (!userId || !sheet || sheet.getLastRow() <= 1) return 0;
+  const row = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues().find(item => cleanCell(item[0]) === userId);
+  return row ? Number(row[1]) || 0 : 0;
+}
+
+function saveAnnouncementReadTime(ss, userId, time) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return false;
+  try {
+    const sheet = getOrCreateSheet(ss, ANNOUNCEMENT_READ_SHEET, ["UserID", "読んだお知らせの時刻"]);
+    const count = sheet.getLastRow() - 1;
+    const rows = count > 0 ? sheet.getRange(2, 1, count, 2).getValues() : [];
+    const index = rows.findIndex(row => cleanCell(row[0]) === userId);
+    if (index < 0) sheet.appendRow([safeSheetText(userId, 64), time]);
+    else if (time > (Number(rows[index][1]) || 0)) sheet.getRange(index + 2, 2).setValue(time);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ===== 管理者の会話閲覧 =====

@@ -113,6 +113,8 @@
     }
 
     function finish() {
+        if (!root) return;
+        const onFinish = options.onFinish;
         // 「見た」の記録は、ホームの案内だけに残す
         if (activeSteps === STEPS) {
             try { localStorage.setItem(DONE_KEY(), "1"); } catch (error) { /* 保存できなくても閉じる */ }
@@ -122,6 +124,7 @@
         window.removeEventListener("scroll", place);
         if (root) { root.classList.add("is-out"); const el = root; setTimeout(() => el.remove(), 250); }
         root = null;
+        if (typeof onFinish === "function") onFinish();
     }
 
     // 引数なしならホームの案内。{ steps, lastLabel, scrollBlock } を渡すと、ほかの画面の案内を出せる

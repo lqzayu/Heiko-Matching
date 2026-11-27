@@ -183,7 +183,7 @@ function installHeikoNotify() {
     if (document.getElementById("heiko-notify-script")) return;
     const script = document.createElement("script");
     script.id = "heiko-notify-script";
-    script.src = "notify.js?v=20261127u";
+    script.src = "notify.js?v=20261128a";
     document.body.appendChild(script);
 }
 
@@ -944,7 +944,7 @@ function installHeikoSharedStyles() {
 
 (function installUsageLogging() {
     const nativeFetch = window.fetch.bind(window);
-    const ignoredModes = new Set(["recordUsageLog", "recordUsageLogs", "heartbeat", "login", "register", "verifyEmail", "resendVerificationCode", "forgotPassword", "resetPassword", "verify_face_1toN", "verify_face_for_user", "firebaseCustomToken", "getMessages", "getUnreadCount", "getNotificationSummary", "getLatestIncomingMessage", "markAsRead", "getBlockedUsers", "getPushConfig", "registerWebPush", "unregisterWebPush", "getReactions", "markReactionsRead"]);
+    const ignoredModes = new Set(["recordUsageLog", "recordUsageLogs", "heartbeat", "login", "register", "verifyEmail", "resendVerificationCode", "forgotPassword", "resetPassword", "verify_face_1toN", "verify_face_for_user", "firebaseCustomToken", "getMessages", "getUnreadCount", "getNotificationSummary", "getLatestIncomingMessage", "markAsRead", "getBlockedUsers", "getPushConfig", "registerWebPush", "unregisterWebPush", "getReactions", "markReactionsRead", "getAnnouncements", "markAnnouncementsRead"]);
     const usageLogQueue = [];
     let usageLogTimer = null;
     let usageLogUrl = "";
