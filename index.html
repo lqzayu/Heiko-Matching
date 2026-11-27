@@ -974,7 +974,7 @@
                     <path d="M18 19v3M30 19v3M24 21v7h-2M18.5 33c3 2.6 8 2.6 11 0"/>
                 </svg>
             </div>
-            <p class="login-face-caption">ユーザIDを入力してから押すと、<br>カメラで顔を確認してログインします。</p>
+            <p class="login-face-caption">ユーザIDとパスワードを入力してから押すと、<br>カメラで顔も確認してログインします。</p>
 
 
             <div id="camera-container" class="camera-box">
@@ -2040,6 +2040,21 @@
 
             }
 
+            // 顔だけではログインできない。カメラを起動する前にパスワードを確認する
+            const facePassword = document.getElementById('password').value.trim();
+
+            if (!facePassword) {
+
+                authStatus.innerText = "顔認証にはパスワードの入力も必要です。";
+
+                authStatus.style.color = "#ef4444";
+
+                document.getElementById('password').focus();
+
+                return;
+
+            }
+
 
             faceLoginBusy = true;
 
@@ -2106,6 +2121,8 @@
                         mode: "verify_face_for_user",
 
                         userId: userId,
+
+                        password: facePassword,
 
                         currentFeatures: currentLandmarks,
 

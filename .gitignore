@@ -1,0 +1,6 @@
+# 開発用のファイルは公開しない（手元には残す）
+メモ.txt
+load_test.js
+chat_load_test.js
+.DS_Store
+.vscode/

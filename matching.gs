@@ -995,6 +995,13 @@ function doPost(e) {
       const currentLandmarks = data.currentFeatures;
       const currentSamples = Array.isArray(data.currentFeaturesSamples) ? data.currentFeaturesSamples : [];
       if (!userId) return createRes("error", "顔認証前にユーザーIDを入力してください。");
+      // 顔は写真などでまねされる可能性があるため、パスワードも必ず確認する
+      const facePassword = data.password ? data.password.toString().trim() : "";
+      if (!facePassword) return createRes("error", "顔認証にはパスワードの入力も必要です。画面を読み込み直してください");
+      // パスワードの総当たりに使えないよう、試行回数はパスワードのログインと合わせて数える
+      const faceLoginKey = "login-attempt-" + normalizeUserId(userId.slice(0, 64));
+      const faceLoginFailures = getAttemptCount(faceLoginKey);
+      if (faceLoginFailures >= 10) return createRes("error", "ログイン試行回数が上限に達しました。10分後にもう一度お試しください");
       const faceAttemptKey = "face-attempt-" + normalizeUserId(userId).slice(0, 64);
       const faceAttempts = getAttemptCount(faceAttemptKey);
       if (faceAttempts >= 5) return createRes("error", "顔認証の試行回数が上限に達しました。10分後にもう一度お試しください");
@@ -1005,7 +1012,11 @@ function doPost(e) {
       const faceRowIndex = findUserRowIndex(rows, userId);
       const userRow = faceRowIndex >= 0 ? rows[faceRowIndex] : null;
 
-      if (!userRow) return createRes("error", "ユーザーIDが見つかりません。");
+      // パスワードが合うまでは、そのIDがあるか、顔を登録しているかなどを教えない
+      if (!userRow || !verifyPassword(cleanCell(userRow[1]), facePassword)) {
+        recordAttemptFailure(faceLoginKey, faceLoginFailures, 600);
+        return createRes("error", "ユーザーIDまたはパスワードが間違っています");
+      }
       // 顔認証は本人がカメラの前にいることまでは確かめられないため、全員の情報を扱える管理者には使わせない
       if (cleanCell(userRow[0]) === ADMIN_USER_ID) return createRes("error", "管理者アカウントは顔認証を使えません。パスワードでログインしてください");
       if (userRow[6] !== true) return createRes("error", isBannedUserRow(userRow) ? USER_BANNED_MESSAGE : "メール認証が完了していません。");
@@ -1046,6 +1057,7 @@ function doPost(e) {
           profileImage: userRow[4] || ""
         };
         clearAttemptFailures(faceAttemptKey);
+        clearAttemptFailures(faceLoginKey);
         faceLoginResult.sessionToken = createUserSessionToken(cleanCell(userRow[0]), cleanCell(userRow[12]));
         return createRes("success", faceLoginResult);
       } catch (e) {
@@ -3914,6 +3926,77 @@ function runPrivacyMaintenance() {
   const hadFace = adminIndex > 0 && Boolean(userRows[adminIndex][3]);
   if (hadFace) userSheet.getRange(adminIndex + 1, 4).setValue("");
   console.log("管理者の顔情報: " + (hadFace ? "消しました" : "登録はありません"));
+}
+
+// ===== 削除後に同じIDで登録し直された可能性があるアカウントを探す =====
+// Apps Script のエディタで checkPossiblyReusedUserIds を選んで「実行」する。何も変更せず、実行ログに表示するだけ。
+// 登録日時は保存していないので確定はできない。ユーザーのシートは登録した順に並ぶことを使い、
+// 「上の行の人（先に登録した人）のだれよりも古い記録を持つ人」を確認の候補にする。
+// records は [{ time, ids: [その記録に関わるユーザーID] }]。候補の本人が関わる記録は、比べる相手の分から除く
+// （前の持ち主とのやり取りは相手の記録にもなるため、含めると見つけられない）
+function findReusedUserIdCandidates(userIds, records) {
+  const MARGIN = 24 * 60 * 60 * 1000;
+  const recordsByUser = new Map();
+  records.forEach(record => record.ids.forEach(id => {
+    if (!recordsByUser.has(id)) recordsByUser.set(id, []);
+    recordsByUser.get(id).push(record);
+  }));
+  const candidates = [];
+  userIds.forEach((userId, position) => {
+    const own = recordsByUser.get(userId);
+    if (!own) return;
+    const firstRecord = own.reduce((min, record) => Math.min(min, record.time), Infinity);
+    let earliestAbove = Infinity;
+    let countAbove = 0;
+    userIds.slice(0, position).forEach(otherId => {
+      let first = Infinity;
+      (recordsByUser.get(otherId) || []).forEach(record => {
+        if (!record.ids.includes(userId)) first = Math.min(first, record.time);
+      });
+      if (first === Infinity) return;
+      earliestAbove = Math.min(earliestAbove, first);
+      countAbove++;
+    });
+    if (countAbove >= 3 && firstRecord + MARGIN < earliestAbove) candidates.push({ userId: userId, firstRecord: firstRecord, earliestAbove: earliestAbove });
+  });
+  return candidates;
+}
+
+function checkPossiblyReusedUserIds() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const userSheet = ss.getSheetByName("シート1");
+  if (!userSheet || userSheet.getLastRow() <= 1) throw new Error("ユーザーのシートが見つかりません");
+  const userIds = userSheet.getDataRange().getValues().slice(1).map(row => cleanCell(row[0])).filter(id => id && id !== ADMIN_USER_ID);
+  const records = [];
+  const note = (ids, value) => {
+    const time = value instanceof Date ? value.getTime() : typeof value === "number" ? value : Date.parse(value);
+    const involved = ids.filter(Boolean);
+    if (involved.length && time > 0) records.push({ time: time, ids: involved });
+  };
+  // [シート名, ユーザーIDの列, 日時の列]
+  [["チャット", [0, 1], 3], ["chat-copy", [0, 1], 3], ["AIログ", [2], 0], ["リアクション", [1, 2], 4], ["通報", [1, 2], 8], ["チャット非表示", [0, 1], 2], ["募集", [5], 4]]
+    .forEach(([name, columns, timeColumn]) => {
+      const sheet = ss.getSheetByName(name);
+      if (!sheet || sheet.getLastRow() <= 1) return;
+      sheet.getDataRange().getValues().slice(1).forEach(row => note(columns.map(column => cleanCell(row[column])), row[timeColumn]));
+    });
+  try {
+    const token = getFirebaseAdminToken();
+    if (token) {
+      const inboxes = firebaseDatabaseRequest(token, "get", "inbox") || {};
+      Object.keys(inboxes).forEach(uid => Object.keys(inboxes[uid] || {}).forEach(key => {
+        const message = inboxes[uid][key] || {};
+        note([cleanCell(message.from), cleanCell(message.to)], Number(message.sentAt));
+      }));
+      console.log("Firebaseの確認：成功");
+    }
+  } catch (error) {
+    console.error("Firebaseの確認：失敗しました。シートの記録だけで調べます。" + error);
+  }
+  const format = time => Utilities.formatDate(new Date(time), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const candidates = findReusedUserIdCandidates(userIds, records);
+  candidates.forEach(item => console.log("要確認: ユーザーID " + item.userId + " ／ 最初の記録 " + format(item.firstRecord) + " ／ 先に登録した人たちの記録は " + format(item.earliestAbove) + " 以降"));
+  console.log(candidates.length ? "要確認の数: " + candidates.length : "候補は見つかりませんでした（この方法で分からない場合もあります）");
 }
 
 // ===== クイックリアクション =====
