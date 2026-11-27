@@ -544,8 +544,9 @@
             </div>
 
             <div class="form-group">
-                <label for="username-input">表示名（ニックネーム）</label>
-                <input type="text" id="username-input" class="input-large" maxlength="50" placeholder="名前を入力してください">
+                <label for="nickname-field">表示名（ニックネーム）</label>
+                <!-- 内部の名前に user / name を含めると、iPhone がログイン欄とみなしてパスワードの自動入力を出す -->
+                <input type="text" id="nickname-field" class="input-large" maxlength="50" placeholder="表示する呼び名を入力してください" autocomplete="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other">
             </div>
 
             <div class="profile-school-grid">
@@ -832,7 +833,7 @@
                 localStorage.setItem("userGrade", grade);
                 localStorage.setItem("userDept", dept);
 
-                document.getElementById("username-input").value = name;
+                document.getElementById("nickname-field").value = name;
                 document.getElementById("profile-icon").src = image || DEFAULT_AVATAR;
                 document.getElementById("profile-grade").value = grade;
                 document.getElementById("profile-dept").value = dept;
@@ -911,7 +912,7 @@
 
         async function saveProfile() {
             if (profileSaving) return;
-            const name = document.getElementById("username-input").value.trim();
+            const name = document.getElementById("nickname-field").value.trim();
             const imageSrc = document.getElementById("profile-icon").src;
             const email = localStorage.getItem("userEmail");
             const grade = document.getElementById("profile-grade").value;
@@ -1343,7 +1344,7 @@
                 adminButton.style.display = "inline-block";
             }
 
-            if (userName) document.getElementById("username-input").value = userName;
+            if (userName) document.getElementById("nickname-field").value = userName;
             document.getElementById("profile-grade").value = userGrade;
             document.getElementById("profile-dept").value = userDept;
 
