@@ -1982,3 +1982,21 @@ html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"] { -webk
 html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"]:checked { background:#059669!important; border-color:#059669!important; }
 html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"]:checked::after { content:""; position:absolute; left:5px; top:1px; width:5px; height:10px; border-right:3px solid #ffffff; border-bottom:3px solid #ffffff; transform:rotate(45deg); }
 html body :is(.user-id-show, .heiko-notify-sound) input[type="checkbox"]:focus-visible { outline:3px solid var(--ui-green); outline-offset:2px; }
+
+/* ===== サイドメニュー：ホバーの移動を滑らかにする =====
+   項目の指定が「背景の色だけを滑らかに変える」になっていたため、右への移動が1コマで飛んでいた。
+   移動と色を同じ動き方にそろえる（「更新」ボタンも、ほかの項目と同じ動きにする） */
+@media (min-width:769px) and (min-aspect-ratio:1/1) and (hover:hover) and (pointer:fine) {
+ html body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout),
+ html body:has(> .navbar) .navbar .heiko-page-refresh.is-side-nav {
+  transition: transform .42s cubic-bezier(.25,.8,.25,1), background-color .42s cubic-bezier(.25,.8,.25,1), color .25s ease !important;
+ }
+ html body:has(> .navbar) .navbar .heiko-page-refresh.is-side-nav:not(:disabled):hover { transform: translate3d(6px, 0, 0) !important; }
+ /* 押している間の少し縮む動きは、すぐに反応させる */
+ html body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout):active,
+ html body:has(> .navbar) .navbar .heiko-page-refresh.is-side-nav:active { transition-duration: .12s !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+ html body:has(> .navbar) .navbar :is(.nav-links, .nav-secondary) > :is(.nav-item, .btn-logout),
+ html body:has(> .navbar) .navbar .heiko-page-refresh.is-side-nav { transition: background-color .2s ease !important; transform: none !important; }
+}
